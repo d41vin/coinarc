@@ -1,4 +1,6 @@
-packages: []
+packages:
+  - 'nextjs'
+  # - 'hardhat'
 
 allowBuilds:
   sharp: true
