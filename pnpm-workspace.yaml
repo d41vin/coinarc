@@ -7,3 +7,4 @@ allowBuilds:
   unrs-resolver: true
   msw: false
   esbuild: true
+  protobufjs: true
