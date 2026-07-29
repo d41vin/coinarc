@@ -8,3 +8,4 @@ allowBuilds:
   msw: false
   esbuild: true
   protobufjs: true
+  msgpackr-extract: true
