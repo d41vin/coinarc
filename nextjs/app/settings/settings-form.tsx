@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { useMutation, useQuery } from "convex/react"
+import { useConvexAuth, useMutation, useQuery } from "convex/react"
 import { makeFunctionReference } from "convex/server"
 import { genUploader } from "uploadthing/client"
 import { useRouter } from "next/navigation"
@@ -70,9 +70,10 @@ function profilePhotoError(reason: unknown) {
 }
 
 export function SettingsForm({ email }: SettingsFormProps) {
-  const data = useQuery(settings)
+  const { isAuthenticated, isLoading } = useConvexAuth()
+  const data = useQuery(settings, isAuthenticated ? {} : "skip")
 
-  if (data === undefined) {
+  if (isLoading || !isAuthenticated || data === undefined) {
     return (
       <main className="mx-auto min-h-[calc(100svh-4rem)] w-full max-w-2xl p-4 sm:p-6">
         <p className="text-sm text-muted-foreground">Loading settings…</p>

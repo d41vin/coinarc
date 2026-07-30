@@ -15,7 +15,7 @@ import {
   WalletCards,
 } from "lucide-react"
 import { useEffect, useState, useSyncExternalStore } from "react"
-import { useMutation, useQuery } from "convex/react"
+import { useConvexAuth, useMutation, useQuery } from "convex/react"
 import { makeFunctionReference } from "convex/server"
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -413,8 +413,12 @@ function FriendsPanel({ data }: { data: FriendsData | undefined }) {
 }
 
 export function HomeDashboard({ displayName }: { displayName: string }) {
-  const friends = useQuery(listFriends)
-  const savedPinnedActions = useQuery(homePinnedActions)
+  const { isAuthenticated } = useConvexAuth()
+  const friends = useQuery(listFriends, isAuthenticated ? {} : "skip")
+  const savedPinnedActions = useQuery(
+    homePinnedActions,
+    isAuthenticated ? {} : "skip"
+  )
   const savePinnedActions = useMutation(setHomePinnedActions)
   const [activeAction, setActiveAction] = useState<Action | null>(null)
   const greeting = useGreeting()

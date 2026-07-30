@@ -315,7 +315,7 @@ export const settings = query({
   args: {},
   handler: async (ctx) => {
     const auth = await identity(ctx)
-    if (!auth) throw new Error("Unauthorized")
+    if (!auth) return null
     const user = await currentUser(ctx, auth)
     if (!user) return null
     const wallets = await ctx.db

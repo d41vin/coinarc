@@ -1,6 +1,7 @@
 import { Geist_Mono, Inter } from "next/font/google"
 
 import "@/styles/globals.css"
+import { CoinArcConvexProvider } from "@/components/convex-provider"
 import { SiteHeader } from "@/components/site-header"
 import { ThemeProvider } from "@/components/theme-provider"
 import { cn } from "@/lib/utils"
@@ -30,8 +31,10 @@ export default async function RootLayout({
     >
       <body>
         <ThemeProvider>
-          <SiteHeader />
-          {children}
+          <CoinArcConvexProvider>
+            <SiteHeader />
+            {children}
+          </CoinArcConvexProvider>
         </ThemeProvider>
       </body>
     </html>

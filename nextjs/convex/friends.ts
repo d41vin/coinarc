@@ -412,7 +412,11 @@ export const unblockUser = mutation({
 export const list = query({
   args: {},
   handler: async (ctx) => {
-    const viewer = await currentOnboardedUser(ctx)
+    const auth = await identity(ctx)
+    if (!auth) return { incoming: [], outgoing: [], friends: [] }
+    const viewer = await currentUser(ctx, auth)
+    if (!viewer?.onboardingComplete)
+      return { incoming: [], outgoing: [], friends: [] }
     const [incomingRequests, outgoingRequests, friendships] = await Promise.all(
       [
         ctx.db

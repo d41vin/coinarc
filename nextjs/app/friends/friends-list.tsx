@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { Check, Clock3, UserX, UsersRound } from "lucide-react"
 import { useState } from "react"
-import { useMutation, useQuery } from "convex/react"
+import { useConvexAuth, useMutation, useQuery } from "convex/react"
 import { makeFunctionReference } from "convex/server"
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -62,7 +62,8 @@ function initials(displayName: string) {
 }
 
 export function FriendsList() {
-  const data = useQuery(listFriends)
+  const { isAuthenticated, isLoading } = useConvexAuth()
+  const data = useQuery(listFriends, isAuthenticated ? {} : "skip")
   const accept = useMutation(acceptRequest)
   const decline = useMutation(declineRequest)
   const cancel = useMutation(cancelRequest)
@@ -95,7 +96,7 @@ export function FriendsList() {
     }
   }
 
-  if (data === undefined) {
+  if (isLoading || !isAuthenticated || data === undefined) {
     return (
       <main className="mx-auto min-h-[calc(100svh-4rem)] w-full max-w-2xl p-4 sm:p-6">
         <p className="text-sm text-muted-foreground">Loading friends…</p>

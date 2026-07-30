@@ -198,7 +198,10 @@ export async function deleteNotificationsForFriendRequest(
 export const list = query({
   args: {},
   handler: async (ctx) => {
-    const viewer = await currentOnboardedUser(ctx)
+    const auth = await identity(ctx)
+    if (!auth) return []
+    const viewer = await currentUser(ctx, auth)
+    if (!viewer?.onboardingComplete) return []
     const notifications = await ctx.db
       .query("notifications")
       .withIndex("by_recipient_id_and_created_at", (q) =>
@@ -232,7 +235,10 @@ export const list = query({
 export const unreadCount = query({
   args: {},
   handler: async (ctx) => {
-    const viewer = await currentOnboardedUser(ctx)
+    const auth = await identity(ctx)
+    if (!auth) return 0
+    const viewer = await currentUser(ctx, auth)
+    if (!viewer?.onboardingComplete) return 0
     const state = await ctx.db
       .query("notificationStates")
       .withIndex("by_user_id", (q) => q.eq("userId", viewer._id))

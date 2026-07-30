@@ -3,7 +3,7 @@
 import { formatDistanceToNow } from "date-fns"
 import { Bell, Check, UserRoundX } from "lucide-react"
 import { useState } from "react"
-import { useMutation, useQuery } from "convex/react"
+import { useConvexAuth, useMutation, useQuery } from "convex/react"
 import { makeFunctionReference } from "convex/server"
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -22,7 +22,6 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet"
-import { CoinArcConvexProvider } from "@/components/convex-provider"
 import { cn } from "@/lib/utils"
 
 type Notification = {
@@ -90,8 +89,15 @@ function notificationTime(createdAt: number) {
 }
 
 function NotificationCenter() {
-  const notifications = useQuery(listNotifications)
-  const unreadCount = useQuery(notificationUnreadCount)
+  const { isAuthenticated } = useConvexAuth()
+  const notifications = useQuery(
+    listNotifications,
+    isAuthenticated ? {} : "skip"
+  )
+  const unreadCount = useQuery(
+    notificationUnreadCount,
+    isAuthenticated ? {} : "skip"
+  )
   const markRead = useMutation(markNotificationRead)
   const markAllRead = useMutation(markAllNotificationsRead)
   const accept = useMutation(acceptRequest)
@@ -304,9 +310,5 @@ function NotificationRow({
 }
 
 export function HeaderNotificationCenter() {
-  return (
-    <CoinArcConvexProvider>
-      <NotificationCenter />
-    </CoinArcConvexProvider>
-  )
+  return <NotificationCenter />
 }

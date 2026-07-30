@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation"
 
-import { CoinArcConvexProvider } from "@/components/convex-provider"
 import { getSession } from "@/lib/auth"
 import { sessionState } from "@/lib/convex-server"
 import { HomeDashboard } from "./home-dashboard"
@@ -21,9 +20,5 @@ export default async function HomePage() {
     console.error("Could not load the authenticated home profile", reason)
   }
 
-  return (
-    <CoinArcConvexProvider>
-      <HomeDashboard displayName={displayName} />
-    </CoinArcConvexProvider>
-  )
+  return <HomeDashboard displayName={displayName} />
 }
