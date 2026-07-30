@@ -46,6 +46,8 @@ export function OnboardingForm() {
   const [displayName, setDisplayName] = useState("")
   const [username, setUsername] = useState("")
   const [avatarUrl, setAvatarUrl] = useState<string>()
+  const [isPhotoUploading, setIsPhotoUploading] = useState(false)
+  const [photoError, setPhotoError] = useState<string>()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
   const initials =
@@ -61,24 +63,25 @@ export function OnboardingForm() {
     const file = event.target.files?.[0]
     if (!file) return
 
+    setPhotoError(undefined)
+
     if (
       !PROFILE_PHOTO_MIME_TYPES.includes(
         file.type as (typeof PROFILE_PHOTO_MIME_TYPES)[number]
       )
     ) {
-      setError("Choose a JPEG, PNG, or non-animated WebP profile photo.")
+      setPhotoError("Choose a JPEG, PNG, or non-animated WebP profile photo.")
       return
     }
 
     if (file.size > PROFILE_PHOTO_MAX_BYTES) {
-      setError(
+      setPhotoError(
         `This profile photo is larger than ${PROFILE_PHOTO_MAX_LABEL}. Choose a smaller image and try again.`
       )
       return
     }
 
-    setBusy(true)
-    setError(undefined)
+    setIsPhotoUploading(true)
 
     try {
       const result = await upload.uploadFiles("profilePhoto", {
@@ -89,14 +92,16 @@ export function OnboardingForm() {
       if (!url) throw new Error("Upload did not return a profile photo")
       setAvatarUrl(url)
     } catch (reason) {
-      setError(profilePhotoError(reason))
+      setPhotoError(profilePhotoError(reason))
     } finally {
-      setBusy(false)
+      setIsPhotoUploading(false)
     }
   }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
+    if (isPhotoUploading) return
+
     setBusy(true)
     setError(undefined)
 
@@ -138,7 +143,7 @@ export function OnboardingForm() {
               </Avatar>
               <div className="space-y-2">
                 <Label htmlFor="avatar">
-                  Profile photo{" "}
+                  {avatarUrl ? "Replace profile photo" : "Profile photo"}{" "}
                   <span className="text-muted-foreground">(optional)</span>
                 </Label>
                 <Input
@@ -146,11 +151,26 @@ export function OnboardingForm() {
                   type="file"
                   accept="image/jpeg,image/png,image/webp"
                   onChange={choosePhoto}
-                  disabled={busy}
+                  disabled={busy || isPhotoUploading}
                 />
                 <p className="text-xs text-muted-foreground">
-                  JPEG, PNG, or WebP. Max {PROFILE_PHOTO_MAX_LABEL}.
+                  JPEG, PNG, or non-animated WebP. Max {PROFILE_PHOTO_MAX_LABEL}
+                  .
                 </p>
+                {isPhotoUploading ? (
+                  <p className="text-xs text-muted-foreground" role="status">
+                    Uploading profile photo…
+                  </p>
+                ) : avatarUrl ? (
+                  <p className="text-xs text-muted-foreground" role="status">
+                    Profile photo uploaded. Choose another image to replace it.
+                  </p>
+                ) : null}
+                {photoError ? (
+                  <p className="text-xs text-destructive" role="alert">
+                    {photoError}
+                  </p>
+                ) : null}
               </div>
             </div>
             <div className="space-y-2">
@@ -196,8 +216,16 @@ export function OnboardingForm() {
                 {error}
               </p>
             )}
-            <Button className="w-full" type="submit" disabled={busy}>
-              {busy ? "Saving…" : "Complete setup"}
+            <Button
+              className="w-full"
+              type="submit"
+              disabled={busy || isPhotoUploading}
+            >
+              {busy
+                ? "Saving…"
+                : isPhotoUploading
+                  ? "Upload in progress…"
+                  : "Complete setup"}
             </Button>
           </form>
         </CardContent>
