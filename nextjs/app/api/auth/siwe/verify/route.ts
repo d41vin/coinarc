@@ -62,6 +62,11 @@ export async function POST(request: Request) {
     const base: Omit<Session, "onboardingComplete"> = {
       sub: `siwe:${parsed.address.toLowerCase()}`,
       provider: "siwe",
+      wallet: {
+        address: parsed.address.toLowerCase(),
+        chainId: ARC_TESTNET_CHAIN_ID,
+        custody: "external",
+      },
     }
     const state = await resolveSession(base)
     const result = NextResponse.json({
