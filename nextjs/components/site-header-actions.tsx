@@ -1,7 +1,14 @@
 "use client"
 
 import Link from "next/link"
-import { LogOut, Moon, Settings, Sun } from "lucide-react"
+import {
+  LogOut,
+  Moon,
+  Settings,
+  Sun,
+  UserRound,
+  UsersRound,
+} from "lucide-react"
 import { usePathname } from "next/navigation"
 import { useTheme } from "next-themes"
 import { useState, useSyncExternalStore } from "react"
@@ -155,6 +162,20 @@ export function SiteHeaderActions({
   return (
     <div className="flex items-center gap-2">
       <ThemeToggle />
+      <Link
+        aria-label="Open groups"
+        className={buttonVariants({ size: "icon", variant: "ghost" })}
+        href="/groups"
+      >
+        <UsersRound />
+      </Link>
+      <Link
+        aria-label="Open profile"
+        className={buttonVariants({ size: "icon", variant: "ghost" })}
+        href="/profile"
+      >
+        <UserRound />
+      </Link>
       <Link
         aria-label="Open settings"
         className={buttonVariants({ size: "icon", variant: "ghost" })}
