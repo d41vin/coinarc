@@ -92,7 +92,7 @@ async function ensureVerifiedWallet(
   const userWallets = await ctx.db
     .query("wallets")
     .withIndex("by_user_id", (q) => q.eq("userId", userId))
-    .collect()
+    .take(20)
   await ctx.db.insert("wallets", {
     userId,
     ...wallet,
