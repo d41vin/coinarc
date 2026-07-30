@@ -39,6 +39,25 @@ export default defineSchema({
   })
     .index("by_address", ["address"])
     .index("by_user_id", ["userId"]),
+  friendRequests: defineTable({
+    senderId: v.id("users"),
+    recipientId: v.id("users"),
+    createdAt: v.number(),
+  })
+    .index("by_sender_id_and_recipient_id", ["senderId", "recipientId"])
+    .index("by_recipient_id_and_sender_id", ["recipientId", "senderId"]),
+  friendships: defineTable({
+    userId: v.id("users"),
+    friendId: v.id("users"),
+    createdAt: v.number(),
+  })
+    .index("by_user_id_and_friend_id", ["userId", "friendId"])
+    .index("by_user_id_and_created_at", ["userId", "createdAt"]),
+  userBlocks: defineTable({
+    blockerId: v.id("users"),
+    blockedId: v.id("users"),
+    createdAt: v.number(),
+  }).index("by_blocker_id_and_blocked_id", ["blockerId", "blockedId"]),
   circleOtpAttempts: defineTable({
     attemptId: v.string(),
     email: v.string(),
