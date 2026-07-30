@@ -16,11 +16,93 @@ import {
   walletConnectWallet,
 } from "@rainbow-me/rainbowkit/wallets"
 import "@rainbow-me/rainbowkit/styles.css"
-import { WagmiProvider } from "wagmi"
+import { createConnector, WagmiProvider } from "wagmi"
+import { injected, type InjectedParameters } from "wagmi/connectors"
 import { defineChain } from "viem"
 import { createSiweMessage } from "viem/siwe"
 import { useState, type ReactNode } from "react"
 import { ARC_TESTNET_CHAIN_ID, ARC_TESTNET_RPC } from "@/lib/arc-testnet"
+
+type BrowserProvider = Extract<
+  Extract<
+    NonNullable<InjectedParameters["target"]>,
+    { provider: unknown }
+  >["provider"],
+  { request: unknown; on: unknown }
+>
+
+function browserProviders() {
+  if (typeof window === "undefined") return []
+  const ethereum = (window as unknown as { ethereum?: BrowserProvider })
+    .ethereum
+  if (!ethereum) return []
+  return ethereum.providers?.length ? ethereum.providers : [ethereum]
+}
+
+function metaMaskProvider() {
+  return browserProviders().find(
+    (provider) => provider.isMetaMask && !provider.isPhantom
+  )
+}
+
+function coinbaseProvider() {
+  if (typeof window === "undefined") return undefined
+  const extensionProvider = (
+    window as unknown as { coinbaseWalletExtension?: BrowserProvider }
+  ).coinbaseWalletExtension
+  return (
+    extensionProvider ??
+    browserProviders().find((provider) => provider.isCoinbaseWallet)
+  )
+}
+
+function walletWithExplicitProvider(
+  wallet: ReturnType<typeof metaMaskWallet>,
+  id: string,
+  name: string,
+  provider: BrowserProvider
+) {
+  return {
+    ...wallet,
+    installed: true,
+    createConnector: (
+      walletDetails: Parameters<typeof wallet.createConnector>[0]
+    ) =>
+      createConnector((config) => ({
+        ...injected({ target: { id, name, provider } })(config),
+        ...walletDetails,
+      })),
+  }
+}
+
+const explicitMetaMaskWallet = (...args: Parameters<typeof metaMaskWallet>) => {
+  const wallet = metaMaskWallet(...args)
+  const provider = metaMaskProvider()
+  if (!provider) return wallet
+
+  return walletWithExplicitProvider(wallet, "metaMask", "MetaMask", provider)
+}
+
+const explicitCoinbaseWallet = (...args: Parameters<typeof coinbaseWallet>) => {
+  const wallet = coinbaseWallet(...args)
+  const provider = coinbaseProvider()
+  if (!provider) return wallet
+
+  return walletWithExplicitProvider(
+    wallet,
+    "coinbaseWallet",
+    "Coinbase Wallet",
+    provider
+  )
+}
+
+const singleProviderWallet = () => {
+  const wallet = injectedWallet()
+  return {
+    ...wallet,
+    hidden: () => browserProviders().length !== 1,
+  }
+}
 
 const arcTestnet = defineChain({
   id: ARC_TESTNET_CHAIN_ID,
@@ -38,11 +120,16 @@ const config = getDefaultConfig({
   wallets: [
     {
       groupName: "Recommended",
-      wallets: [metaMaskWallet, rabbyWallet, rainbowWallet, coinbaseWallet],
+      wallets: [
+        explicitMetaMaskWallet,
+        rabbyWallet,
+        rainbowWallet,
+        explicitCoinbaseWallet,
+      ],
     },
     {
       groupName: "Other EVM wallets",
-      wallets: [injectedWallet, walletConnectWallet],
+      wallets: [singleProviderWallet, walletConnectWallet],
     },
   ],
 })
