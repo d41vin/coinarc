@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import type { Session } from "@/lib/auth"
 import { UserSearch } from "@/components/user-search"
+import { HeaderNotificationCenter } from "@/components/notification-center"
 
 type SiteHeaderActionsProps = {
   profile: {
@@ -183,6 +184,7 @@ export function SiteHeaderActions({
     <div className="flex items-center gap-2">
       <ThemeToggle />
       <UserSearch />
+      <HeaderNotificationCenter />
       <Link
         aria-label="Open friends"
         className={buttonVariants({ size: "icon", variant: "ghost" })}

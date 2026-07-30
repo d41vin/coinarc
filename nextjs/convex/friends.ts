@@ -3,6 +3,10 @@ import { v } from "convex/values"
 import { mutation, query } from "./_generated/server"
 import type { Id } from "./_generated/dataModel"
 import type { MutationCtx, QueryCtx } from "./_generated/server"
+import {
+  createFriendRequestNotification,
+  deleteNotificationsForFriendRequest,
+} from "./notifications"
 
 const ARC_TESTNET_CHAIN_ID = 5_042_002
 const MAX_LIST_ITEMS = 100
@@ -233,10 +237,18 @@ export const sendRequest = mutation({
       throw new Error("This person has already sent you a friend request")
     }
 
-    await ctx.db.insert("friendRequests", {
+    const createdAt = Date.now()
+    const requestId = await ctx.db.insert("friendRequests", {
       senderId: viewer._id,
       recipientId: recipient._id,
-      createdAt: Date.now(),
+      createdAt,
+    })
+    await createFriendRequestNotification(ctx, {
+      recipientId: recipient._id,
+      actorId: viewer._id,
+      requestId,
+      type: "friend-request-received",
+      createdAt,
     })
     return { status: "outgoing-request" satisfies FriendshipStatus }
   },
@@ -255,7 +267,17 @@ export const acceptRequest = mutation({
       exactFriendship(ctx, viewer._id, sender._id),
       exactFriendship(ctx, sender._id, viewer._id),
     ])
-    if (request) await ctx.db.delete(request._id)
+    if (request) {
+      await ctx.db.delete(request._id)
+      await deleteNotificationsForFriendRequest(ctx, request._id)
+      await createFriendRequestNotification(ctx, {
+        recipientId: sender._id,
+        actorId: viewer._id,
+        requestId: request._id,
+        type: "friend-request-accepted",
+        createdAt: Date.now(),
+      })
+    }
     if (!request && !viewerFriendship && !senderFriendship)
       throw new Error("Friend request no longer exists")
 
@@ -283,7 +305,17 @@ export const declineRequest = mutation({
     const viewer = await currentOnboardedUser(ctx)
     const sender = await publicUserByUsername(ctx, args.username)
     const request = await exactRequest(ctx, sender._id, viewer._id)
-    if (request) await ctx.db.delete(request._id)
+    if (request) {
+      await ctx.db.delete(request._id)
+      await deleteNotificationsForFriendRequest(ctx, request._id)
+      await createFriendRequestNotification(ctx, {
+        recipientId: sender._id,
+        actorId: viewer._id,
+        requestId: request._id,
+        type: "friend-request-declined",
+        createdAt: Date.now(),
+      })
+    }
     return { status: "not-connected" satisfies FriendshipStatus }
   },
 })
@@ -294,7 +326,10 @@ export const cancelRequest = mutation({
     const viewer = await currentOnboardedUser(ctx)
     const recipient = await publicUserByUsername(ctx, args.username)
     const request = await exactRequest(ctx, viewer._id, recipient._id)
-    if (request) await ctx.db.delete(request._id)
+    if (request) {
+      await ctx.db.delete(request._id)
+      await deleteNotificationsForFriendRequest(ctx, request._id)
+    }
     return { status: "not-connected" satisfies FriendshipStatus }
   },
 })
@@ -349,6 +384,9 @@ export const blockUser = mutation({
       reciprocal,
     ]) {
       if (connection) await ctx.db.delete(connection._id)
+    }
+    for (const request of [outgoingRequest, incomingRequest]) {
+      if (request) await deleteNotificationsForFriendRequest(ctx, request._id)
     }
     return { status: "blocked-by-viewer" satisfies FriendshipStatus }
   },

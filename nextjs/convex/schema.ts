@@ -70,6 +70,29 @@ export default defineSchema({
     blockedId: v.id("users"),
     createdAt: v.number(),
   }).index("by_blocker_id_and_blocked_id", ["blockerId", "blockedId"]),
+  notifications: defineTable({
+    recipientId: v.id("users"),
+    actorId: v.id("users"),
+    type: v.union(
+      v.literal("friend-request-received"),
+      v.literal("friend-request-accepted"),
+      v.literal("friend-request-declined")
+    ),
+    source: v.object({
+      type: v.literal("friend-request"),
+      id: v.id("friendRequests"),
+    }),
+    createdAt: v.number(),
+    isRead: v.boolean(),
+    readAt: v.optional(v.number()),
+  })
+    .index("by_recipient_id_and_created_at", ["recipientId", "createdAt"])
+    .index("by_recipient_id_and_is_read", ["recipientId", "isRead"])
+    .index("by_source_id", ["source.id"]),
+  notificationStates: defineTable({
+    userId: v.id("users"),
+    unreadCount: v.number(),
+  }).index("by_user_id", ["userId"]),
   circleOtpAttempts: defineTable({
     attemptId: v.string(),
     email: v.string(),
