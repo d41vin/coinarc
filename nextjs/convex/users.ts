@@ -149,6 +149,26 @@ export const current = query({
   },
 })
 
+export const settings = query({
+  args: {},
+  handler: async (ctx) => {
+    const auth = await identity(ctx)
+    if (!auth) throw new Error("Unauthorized")
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_token_identifier", (q) =>
+        q.eq("tokenIdentifier", auth.tokenIdentifier)
+      )
+      .unique()
+    if (!user) return null
+    const wallets = await ctx.db
+      .query("wallets")
+      .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+      .take(20)
+    return { user, wallets }
+  },
+})
+
 export const completeOnboarding = mutation({
   args: { displayName: v.string(), username: v.string() },
   handler: async (ctx, args) => {
@@ -184,6 +204,37 @@ export const completeOnboarding = mutation({
   },
 })
 
+export const updateProfile = mutation({
+  args: { displayName: v.string(), username: v.string() },
+  handler: async (ctx, args) => {
+    const auth = await identity(ctx)
+    if (!auth) throw new Error("Unauthorized")
+    const displayName = args.displayName.trim()
+    const username = args.username.trim().toLowerCase()
+    if (!displayName || displayName.length > 80)
+      throw new Error(
+        "Display name is required and must be 80 characters or fewer"
+      )
+    if (!validUsername(username))
+      throw new Error("Username must follow the required format")
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_token_identifier", (q) =>
+        q.eq("tokenIdentifier", auth.tokenIdentifier)
+      )
+      .unique()
+    if (!user) throw new Error("Profile not found")
+    const duplicate = await ctx.db
+      .query("users")
+      .withIndex("by_username", (q) => q.eq("username", username))
+      .unique()
+    if (duplicate && duplicate._id !== user._id)
+      throw new Error("That username is already taken")
+    await ctx.db.patch(user._id, { displayName, username })
+    return null
+  },
+})
+
 export const setAvatar = mutation({
   args: { avatarUrl: v.string(), avatarKey: v.string() },
   handler: async (ctx, args) => {
@@ -197,6 +248,34 @@ export const setAvatar = mutation({
       .unique()
     if (!user) throw new Error("Profile not found")
     await ctx.db.patch(user._id, args)
+    return null
+  },
+})
+
+export const setPrimaryReceivingWallet = mutation({
+  args: { walletId: v.id("wallets") },
+  handler: async (ctx, args) => {
+    const auth = await identity(ctx)
+    if (!auth) throw new Error("Unauthorized")
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_token_identifier", (q) =>
+        q.eq("tokenIdentifier", auth.tokenIdentifier)
+      )
+      .unique()
+    if (!user) throw new Error("Profile not found")
+    const selected = await ctx.db.get(args.walletId)
+    if (!selected || selected.userId !== user._id)
+      throw new Error("Wallet not found")
+    const wallets = await ctx.db
+      .query("wallets")
+      .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+      .take(20)
+    for (const wallet of wallets) {
+      const primaryReceiving = wallet._id === selected._id
+      if (wallet.primaryReceiving !== primaryReceiving)
+        await ctx.db.patch(wallet._id, { primaryReceiving })
+    }
     return null
   },
 })
