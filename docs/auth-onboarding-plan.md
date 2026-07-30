@@ -1,8 +1,20 @@
 # CoinArc Auth and Onboarding Plan
 
-Status: planning only. No authentication or wallet implementation has been started.
+Status: initial authentication and onboarding slice implemented. This remains the handoff record for future sessions.
 
-Last updated: 2026-07-29
+Last updated: 2026-07-30
+
+## Implemented in the initial slice
+
+- Circle User-Controlled Wallet Email OTP with an embedded Arc Testnet wallet.
+- RainbowKit/wagmi/viem external-wallet connection and CoinArc-owned SIWE verification.
+- RS256 HTTP-only CoinArc sessions; short-lived Convex access tokens; issuer JWKS and OpenID configuration routes.
+- Server-backed, single-use Circle OTP attempts and SIWE nonces.
+- Mandatory display-name and username onboarding, with public landing-page access and protected-route gating.
+- UploadThing profile photo uploads: JPEG, PNG, and non-animated WebP; 4 MB maximum.
+- A shared session-aware header, theme control, account menu, and sign out.
+
+The email-OTP path has been verified end to end in Vercel. External-wallet SIWE still needs a real browser-wallet and mobile WalletConnect test before it can be marked verified.
 
 ## Product decisions made
 
@@ -93,6 +105,7 @@ Email OTP necessarily processes the email address needed to authenticate the Cir
 - Create the internal user record immediately, but mark onboarding as incomplete. Any authenticated attempt to enter the product routes back to `/onboarding` until completion, including after logout and sign-in.
 - `/sign-in` is the entry route; the same buttons serve new and returning users. The backend resolves whether an authenticated identity is new or returning.
 - Onboarding completion routes the user to `/home`.
+- The landing page at `/` is always accessible. Its CTA is session-aware: `Sign in`, `Resume setup`, or `Open CoinArc`.
 
 ### Required profile information
 
@@ -114,10 +127,10 @@ Use one authenticated profile-photo upload route per user with the following lau
 
 - One file per upload.
 - JPEG, PNG, or WebP only; do not accept SVG or animated formats for profile photos.
-- **2 MB maximum file size**. This is sufficient for an avatar, reduces mobile upload friction, and protects UploadThing storage. UploadThing supports route-specific image limits, including 2 MB.
+- **4 MB maximum file size**. This balances mobile upload friction with practical profile-photo quality and is supported by UploadThing's route-level image limits.
 - Store the uploaded file reference on the CoinArc user profile only after the authenticated upload completes. Replacing a profile photo should eventually delete the superseded file.
 
-The UploadThing environment token has been configured, but the `uploadthing` package is not installed yet. Install and integrate it only when profile-photo implementation begins.
+UploadThing is installed and integrated. Upload state, successful upload feedback, replacement affordance, and field-specific validation errors are implemented. Profile-photo deletion and cleanup of superseded files belong in future Settings work.
 
 ### Receiving and sending wallets
 
@@ -174,14 +187,17 @@ Use a stable internal CoinArc user ID. Associate it with zero or more identities
 
 An address may be linked to only one CoinArc user. Linking an additional identity or wallet must require active-session confirmation and fresh proof from the identity being added.
 
-## Decisions still needed before implementation
+## Remaining work before public release
 
-Resolve behaviour before designing the detailed screens:
+1. **External-wallet verification**: Test SIWE with a real browser extension and mobile WalletConnect. Localhost is supported for this; its SIWE domain/URI is validated against `http://localhost:3000`, while the JWT issuer remains the production CoinArc origin.
+2. **Wallet records and primary receiving wallet**: Persist the verified Circle and SIWE wallet records using a server-only trust boundary before building public profile/payment links. Do not expose a client-callable mutation that accepts an arbitrary wallet address.
+3. **Account linking UX**: Where is linking allowed, what re-authentication is required, how many external wallets may be linked, and can a user unlink a wallet?
+4. **Recovery and device changes**: Copy and support policy for lost email access, lost wallet access, token expiry, and revoked sessions.
+5. **Abuse controls**: Add server-side OTP request rate limits and resend UX before public traffic. Preserve the existing single-use attempt and nonce protections.
+6. **Terms and privacy acknowledgement**: Define the minimum launch acknowledgement and link it to the appropriate policies before production.
+7. **Production operations**: Create a Convex production deployment and point Vercel Production at it; replace Mailtrap Sandbox with a verified transactional email provider and a custom domain before real-user launch.
 
-1. **Account linking UX**: Where is linking allowed, what re-authentication is required, how many external wallets may be linked, and can a user unlink a wallet?
-2. **Recovery and device changes**: Copy and support policy for lost email access, lost wallet access, token expiry, and revoked sessions.
-3. **Onboarding UI flow**: Design the mobile-first `/sign-in` and `/onboarding` screens, loading states, failure states, wallet-selection affordances, and accessibility.
-4. **Terms and privacy acknowledgement**: Define the minimum launch acknowledgement and link it to the appropriate policies before production.
+The next implementation priority is item 2, because payments and public profiles must resolve a verified primary receiving wallet. It should be designed and implemented together with the first payment/profile data flow rather than as an unverified client-side shortcut.
 
 ## References
 
