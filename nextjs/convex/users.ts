@@ -14,6 +14,13 @@ const reserved = new Set([
   "wallet",
 ])
 const ARC_TESTNET_CHAIN_ID = 5_042_002
+const homeActionValidator = v.union(
+  v.literal("payment-link"),
+  v.literal("claim-link"),
+  v.literal("schedule-payment"),
+  v.literal("recurring-payment"),
+  v.literal("request-payment")
+)
 
 type CoinArcIdentity = {
   tokenIdentifier: string
@@ -163,6 +170,47 @@ export const current = query({
     const auth = await identity(ctx)
     if (!auth) return null
     return await currentUser(ctx, auth)
+  },
+})
+
+export const homePinnedActions = query({
+  args: {},
+  handler: async (ctx) => {
+    const auth = await identity(ctx)
+    if (!auth) return []
+    const user = await currentUser(ctx, auth)
+    if (!user?.onboardingComplete) return []
+    const preferences = await ctx.db
+      .query("homePreferences")
+      .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+      .unique()
+    return preferences?.pinnedActions ?? []
+  },
+})
+
+export const setHomePinnedActions = mutation({
+  args: { pinnedActions: v.array(homeActionValidator) },
+  handler: async (ctx, args) => {
+    const auth = await identity(ctx)
+    if (!auth) throw new Error("Unauthorized")
+    const user = await currentUser(ctx, auth)
+    if (!user?.onboardingComplete) throw new Error("Complete onboarding first")
+    if (new Set(args.pinnedActions).size !== args.pinnedActions.length)
+      throw new Error("Each home action can only be pinned once")
+
+    const preferences = await ctx.db
+      .query("homePreferences")
+      .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+      .unique()
+    if (preferences) {
+      await ctx.db.patch(preferences._id, { pinnedActions: args.pinnedActions })
+    } else {
+      await ctx.db.insert("homePreferences", {
+        userId: user._id,
+        pinnedActions: args.pinnedActions,
+      })
+    }
+    return args.pinnedActions
   },
 })
 

@@ -15,7 +15,7 @@ import {
   WalletCards,
 } from "lucide-react"
 import { useEffect, useState, useSyncExternalStore } from "react"
-import { useQuery } from "convex/react"
+import { useMutation, useQuery } from "convex/react"
 import { makeFunctionReference } from "convex/server"
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -39,6 +39,7 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -93,8 +94,6 @@ const listFriends = makeFunctionReference<
   Record<string, never>,
   FriendsData
 >("friends:list")
-
-const PINNED_ACTIONS_STORAGE_KEY = "coinarc.home.pinned-actions"
 
 const coreActions: Action[] = [
   {
@@ -158,6 +157,17 @@ const additionalActions: AdditionalAction[] = [
   },
 ]
 
+const homePinnedActions = makeFunctionReference<
+  "query",
+  Record<string, never>,
+  AdditionalActionId[]
+>("users:homePinnedActions")
+const setHomePinnedActions = makeFunctionReference<
+  "mutation",
+  { pinnedActions: AdditionalActionId[] },
+  AdditionalActionId[]
+>("users:setHomePinnedActions")
+
 const emptySubscribe = () => () => {}
 
 function initials(displayName: string) {
@@ -218,10 +228,12 @@ function MoreActions({
   onOpenAction,
   pinnedActionIds,
   onTogglePinned,
+  pinning,
 }: {
   onOpenAction: (action: Action) => void
   onTogglePinned: (actionId: AdditionalActionId) => void
   pinnedActionIds: Set<AdditionalActionId>
+  pinning: boolean
 }) {
   return (
     <DropdownMenu>
@@ -235,31 +247,36 @@ function MoreActions({
         <span className="text-xs font-medium sm:text-sm">More</span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-72">
-        <DropdownMenuLabel>More ways to move money</DropdownMenuLabel>
-        {additionalActions.map((action) => {
-          const Icon = action.icon
-          return (
-            <DropdownMenuItem
-              key={action.id}
-              onClick={() => onOpenAction(action)}
-            >
-              <Icon />
-              <span className="min-w-0 flex-1 truncate">{action.label}</span>
-            </DropdownMenuItem>
-          )
-        })}
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>More ways to move money</DropdownMenuLabel>
+          {additionalActions.map((action) => {
+            const Icon = action.icon
+            return (
+              <DropdownMenuItem
+                key={action.id}
+                onClick={() => onOpenAction(action)}
+              >
+                <Icon />
+                <span className="min-w-0 flex-1 truncate">{action.label}</span>
+              </DropdownMenuItem>
+            )
+          })}
+        </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuLabel>Pin shortcuts below</DropdownMenuLabel>
-        {additionalActions.map((action) => (
-          <DropdownMenuCheckboxItem
-            checked={pinnedActionIds.has(action.id)}
-            key={action.id}
-            onCheckedChange={() => onTogglePinned(action.id)}
-          >
-            <Pin />
-            {action.label}
-          </DropdownMenuCheckboxItem>
-        ))}
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Pin shortcuts below</DropdownMenuLabel>
+          {additionalActions.map((action) => (
+            <DropdownMenuCheckboxItem
+              checked={pinnedActionIds.has(action.id)}
+              disabled={pinning}
+              key={action.id}
+              onCheckedChange={() => onTogglePinned(action.id)}
+            >
+              <Pin />
+              {action.label}
+            </DropdownMenuCheckboxItem>
+          ))}
+        </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -397,42 +414,32 @@ function FriendsPanel({ data }: { data: FriendsData | undefined }) {
 
 export function HomeDashboard({ displayName }: { displayName: string }) {
   const friends = useQuery(listFriends)
+  const savedPinnedActions = useQuery(homePinnedActions)
+  const savePinnedActions = useMutation(setHomePinnedActions)
   const [activeAction, setActiveAction] = useState<Action | null>(null)
   const greeting = useGreeting()
-  const [pinnedActionIds, setPinnedActionIds] = useState<
-    Set<AdditionalActionId>
-  >(new Set())
+  const [isSavingPins, setIsSavingPins] = useState(false)
+  const [pinError, setPinError] = useState<string>()
+  const pinnedActionIds = new Set(savedPinnedActions ?? [])
 
-  useEffect(() => {
-    try {
-      const stored = window.localStorage.getItem(PINNED_ACTIONS_STORAGE_KEY)
-      if (!stored) return
-      const parsed: unknown = JSON.parse(stored)
-      if (!Array.isArray(parsed)) throw new Error("Invalid pinned actions")
-      const validIds = new Set<AdditionalActionId>(
-        parsed.filter(
-          (id: unknown): id is AdditionalActionId =>
-            typeof id === "string" &&
-            additionalActions.some((action) => action.id === id)
-        )
-      )
-      void Promise.resolve().then(() => {
-        setPinnedActionIds(validIds)
-      })
-    } catch {
-      window.localStorage.removeItem(PINNED_ACTIONS_STORAGE_KEY)
-    }
-  }, [])
-
-  function togglePinned(actionId: AdditionalActionId) {
+  async function togglePinned(actionId: AdditionalActionId) {
+    if (isSavingPins || savedPinnedActions === undefined) return
     const next = new Set(pinnedActionIds)
     if (next.has(actionId)) next.delete(actionId)
     else next.add(actionId)
-    window.localStorage.setItem(
-      PINNED_ACTIONS_STORAGE_KEY,
-      JSON.stringify([...next])
-    )
-    setPinnedActionIds(next)
+    setIsSavingPins(true)
+    setPinError(undefined)
+    try {
+      await savePinnedActions({ pinnedActions: [...next] })
+    } catch (reason) {
+      setPinError(
+        reason instanceof Error
+          ? reason.message
+          : "Could not save your pinned shortcuts. Please try again."
+      )
+    } finally {
+      setIsSavingPins(false)
+    }
   }
 
   const pinnedActions = additionalActions.filter((action) =>
@@ -464,8 +471,15 @@ export function HomeDashboard({ displayName }: { displayName: string }) {
               onOpenAction={setActiveAction}
               onTogglePinned={togglePinned}
               pinnedActionIds={pinnedActionIds}
+              pinning={isSavingPins || savedPinnedActions === undefined}
             />
           </div>
+
+          {pinError ? (
+            <p className="text-sm text-destructive" role="alert">
+              {pinError}
+            </p>
+          ) : null}
 
           {pinnedActions.length > 0 ? (
             <div className="grid grid-cols-4 gap-2 sm:gap-3">

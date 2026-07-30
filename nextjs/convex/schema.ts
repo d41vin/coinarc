@@ -39,6 +39,18 @@ export default defineSchema({
   })
     .index("by_address", ["address"])
     .index("by_user_id", ["userId"]),
+  homePreferences: defineTable({
+    userId: v.id("users"),
+    pinnedActions: v.array(
+      v.union(
+        v.literal("payment-link"),
+        v.literal("claim-link"),
+        v.literal("schedule-payment"),
+        v.literal("recurring-payment"),
+        v.literal("request-payment")
+      )
+    ),
+  }).index("by_user_id", ["userId"]),
   friendRequests: defineTable({
     senderId: v.id("users"),
     recipientId: v.id("users"),
