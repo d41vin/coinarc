@@ -9,6 +9,7 @@
  */
 
 import type * as authAttempts from "../authAttempts.js";
+import type * as friends from "../friends.js";
 import type * as users from "../users.js";
 
 import type {
@@ -19,6 +20,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   authAttempts: typeof authAttempts;
+  friends: typeof friends;
   users: typeof users;
 }>;
 
