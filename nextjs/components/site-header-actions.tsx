@@ -65,7 +65,10 @@ function sessionInitial(session: Session) {
   return session.provider === "siwe" ? "W" : "C"
 }
 
-function profileInitial(profile: SiteHeaderActionsProps["profile"], session: Session) {
+function profileInitial(
+  profile: SiteHeaderActionsProps["profile"],
+  session: Session
+) {
   const initials = profile?.displayName
     ?.trim()
     .split(/\s+/)
@@ -77,7 +80,10 @@ function profileInitial(profile: SiteHeaderActionsProps["profile"], session: Ses
   return initials || sessionInitial(session)
 }
 
-export function SiteHeaderActions({ profile, session }: SiteHeaderActionsProps) {
+export function SiteHeaderActions({
+  profile,
+  session,
+}: SiteHeaderActionsProps) {
   const pathname = usePathname()
   const [signingOut, setSigningOut] = useState(false)
   const [signOutError, setSignOutError] = useState<string | null>(null)
@@ -151,17 +157,11 @@ export function SiteHeaderActions({ profile, session }: SiteHeaderActionsProps) 
       <ThemeToggle />
       <Link
         aria-label="Open settings"
-        className={buttonVariants({ size: "sm", variant: "ghost" })}
+        className={buttonVariants({ size: "icon", variant: "ghost" })}
         href="/settings"
       >
         <Settings />
-        <span className="hidden sm:inline">Settings</span>
       </Link>
-      {pathname !== "/home" ? (
-        <Link className={buttonVariants({ size: "sm" })} href="/home">
-          Open CoinArc
-        </Link>
-      ) : null}
       <DropdownMenu>
         <DropdownMenuTrigger
           aria-label="Open account menu"
