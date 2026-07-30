@@ -138,7 +138,7 @@ function SignIn() {
         })
         const initData = (await initialized.json()) as {
           challengeId?: string
-          alreadyInitialized?: boolean
+          walletReady?: boolean
           error?: string
         }
 
