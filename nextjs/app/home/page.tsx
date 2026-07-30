@@ -1,18 +1,29 @@
-import { getSession } from "@/lib/auth"
 import { redirect } from "next/navigation"
+
+import { CoinArcConvexProvider } from "@/components/convex-provider"
+import { getSession } from "@/lib/auth"
+import { sessionState } from "@/lib/convex-server"
+import { HomeDashboard } from "./home-dashboard"
 
 export default async function HomePage() {
   const session = await getSession()
   if (!session) redirect("/sign-in")
   if (!session.onboardingComplete) redirect("/onboarding")
+
+  let displayName = session.email?.split("@")[0] || "there"
+
+  try {
+    const profile = await sessionState(session)
+    displayName = profile?.displayName || displayName
+  } catch (reason) {
+    // The navigation and page shell should stay available if Convex is
+    // temporarily unavailable. The dashboard can still recover its live data.
+    console.error("Could not load the authenticated home profile", reason)
+  }
+
   return (
-    <main className="flex min-h-[calc(100svh-4rem)] items-center justify-center p-6">
-      <div className="max-w-md text-center">
-        <h1 className="text-2xl font-semibold">CoinArc is ready</h1>
-        <p className="mt-2 text-muted-foreground">
-          Your authenticated home will arrive here next.
-        </p>
-      </div>
-    </main>
+    <CoinArcConvexProvider>
+      <HomeDashboard displayName={displayName} />
+    </CoinArcConvexProvider>
   )
 }

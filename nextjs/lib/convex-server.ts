@@ -81,6 +81,22 @@ export async function sessionState(session: Session) {
   )
 }
 
+type WalletForBalance = {
+  address: string
+  primaryReceiving: boolean
+}
+
+const settingsForBalance = makeFunctionReference<
+  "query",
+  Record<string, never>,
+  { wallets: WalletForBalance[] } | null
+>("users:settings")
+
+export async function primaryWalletForSession(session: Session) {
+  const settings = await client(session).query(settingsForBalance, {})
+  return settings?.wallets.find((wallet) => wallet.primaryReceiving) ?? null
+}
+
 type PublicProfile = {
   displayName: string
   username: string
