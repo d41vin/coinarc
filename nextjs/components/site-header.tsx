@@ -6,13 +6,23 @@ import { sessionState } from "@/lib/convex-server"
 
 export async function SiteHeader() {
   const session = await getSession()
-  const profile = session ? await sessionState(session) : null
+  let profile = null
+
+  if (session) {
+    try {
+      profile = await sessionState(session)
+    } catch (reason) {
+      // A profile lookup should never make navigation unavailable. The signed
+      // session remains valid and the client will retry on its next refresh.
+      console.error("Could not load the authenticated header profile", reason)
+    }
+  }
 
   return (
     <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/75">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
         <Link
-          className="text-lg font-semibold tracking-tight focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          className="text-lg font-semibold tracking-tight focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none"
           href="/"
         >
           CoinArc

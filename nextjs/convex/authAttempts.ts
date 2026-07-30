@@ -1,11 +1,74 @@
 import { mutation } from "./_generated/server"
 import { v } from "convex/values"
+import { MINUTE, HOUR, RateLimiter } from "@convex-dev/rate-limiter"
+import { components } from "./_generated/api"
 
 const TEN_MINUTES = 10 * 60 * 1000
+
+const rateLimiter = new RateLimiter(
+  (components as { rateLimiter: never }).rateLimiter,
+  {
+    circleOtpGlobal: {
+      kind: "token bucket",
+      rate: 60,
+      period: MINUTE,
+      capacity: 120,
+    },
+    circleOtpPerEmail: {
+      kind: "fixed window",
+      rate: 3,
+      period: 15 * MINUTE,
+    },
+    circleOtpPerDevice: {
+      kind: "fixed window",
+      rate: 10,
+      period: HOUR,
+    },
+  }
+)
+
+type RateLimitStatus = { ok: boolean; retryAfter?: number }
+
+function blockedRetryAfterMs(...statuses: RateLimitStatus[]) {
+  const blocked = statuses.filter((status) => !status.ok)
+  if (!blocked.length) return null
+
+  return Math.max(...blocked.map((status) => status.retryAfter ?? 0), 1_000)
+}
 
 export const createCircleOtpAttempt = mutation({
   args: { attemptId: v.string(), email: v.string(), deviceId: v.string() },
   handler: async (ctx, args) => {
+    const emailStatus = await rateLimiter.check(ctx, "circleOtpPerEmail", {
+      key: args.email,
+    })
+    const deviceStatus = await rateLimiter.check(ctx, "circleOtpPerDevice", {
+      key: args.deviceId,
+    })
+    const globalStatus = await rateLimiter.check(ctx, "circleOtpGlobal")
+    const retryAfter = blockedRetryAfterMs(
+      emailStatus,
+      deviceStatus,
+      globalStatus
+    )
+    if (retryAfter !== null) return { allowed: false, retryAfterMs: retryAfter }
+
+    const emailLimit = await rateLimiter.limit(ctx, "circleOtpPerEmail", {
+      key: args.email,
+    })
+    const deviceLimit = await rateLimiter.limit(ctx, "circleOtpPerDevice", {
+      key: args.deviceId,
+    })
+    const globalLimit = await rateLimiter.limit(ctx, "circleOtpGlobal")
+    const concurrentRetryAfter = blockedRetryAfterMs(
+      emailLimit,
+      deviceLimit,
+      globalLimit
+    )
+    if (concurrentRetryAfter !== null) {
+      return { allowed: false, retryAfterMs: concurrentRetryAfter }
+    }
+
     const now = Date.now()
     const existing = await ctx.db
       .query("circleOtpAttempts")
@@ -17,7 +80,7 @@ export const createCircleOtpAttempt = mutation({
       createdAt: now,
       expiresAt: now + TEN_MINUTES,
     })
-    return null
+    return { allowed: true, retryAfterMs: null }
   },
 })
 

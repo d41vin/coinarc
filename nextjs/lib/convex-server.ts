@@ -12,7 +12,7 @@ export async function createCircleOtpAttempt(
   attemptId: string,
   email: string,
   deviceId: string
-) {
+): Promise<{ allowed: boolean; retryAfterMs: number | null }> {
   return unauthenticatedClient().mutation(
     makeFunctionReference<"mutation">("authAttempts:createCircleOtpAttempt"),
     { attemptId, email, deviceId }
@@ -122,7 +122,7 @@ export async function saveAvatarForSession(
   session: Session,
   avatarUrl: string,
   avatarKey: string
-) {
+): Promise<{ previousAvatarKey?: string }> {
   return client(session).mutation(
     makeFunctionReference<"mutation">("users:setAvatar"),
     { avatarUrl, avatarKey }

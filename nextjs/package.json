@@ -15,6 +15,7 @@
     "@base-ui/react": "^1.6.0",
     "@circle-fin/user-controlled-wallets": "^10.8.0",
     "@circle-fin/w3s-pw-web-sdk": "^1.1.11",
+    "@convex-dev/rate-limiter": "^0.3.2",
     "@rainbow-me/rainbowkit": "^2.2.11",
     "@shadcn/react": "^0.2.1",
     "@tanstack/react-query": "^5.101.4",

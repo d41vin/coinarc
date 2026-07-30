@@ -341,8 +341,9 @@ export const setAvatar = mutation({
     if (!auth) throw new Error("Unauthorized")
     const user = await currentUser(ctx, auth)
     if (!user) throw new Error("Profile not found")
+    const previousAvatarKey = user.avatarKey
     await ctx.db.patch(user._id, args)
-    return null
+    return { previousAvatarKey }
   },
 })
 

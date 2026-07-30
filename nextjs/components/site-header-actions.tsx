@@ -12,7 +12,7 @@ import {
 } from "lucide-react"
 import { usePathname } from "next/navigation"
 import { useTheme } from "next-themes"
-import { useState, useSyncExternalStore } from "react"
+import { useEffect, useState, useSyncExternalStore } from "react"
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -38,6 +38,7 @@ type SiteHeaderActionsProps = {
 }
 
 const emptySubscribe = () => () => {}
+const SESSION_REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1_000
 
 function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme()
@@ -94,8 +95,25 @@ export function SiteHeaderActions({
   session,
 }: SiteHeaderActionsProps) {
   const pathname = usePathname()
+  const sessionSubject = session?.sub
   const [signingOut, setSigningOut] = useState(false)
   const [signOutError, setSignOutError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!sessionSubject) return
+
+    const refreshSession = () => {
+      void fetch("/api/auth/refresh-session", { method: "POST" })
+    }
+
+    refreshSession()
+    const interval = window.setInterval(
+      refreshSession,
+      SESSION_REFRESH_INTERVAL_MS
+    )
+
+    return () => window.clearInterval(interval)
+  }, [sessionSubject])
 
   async function signOut() {
     setSigningOut(true)

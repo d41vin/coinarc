@@ -1,8 +1,8 @@
 # CoinArc Auth and Onboarding Plan
 
-Status: initial authentication and onboarding slice implemented. This remains the handoff record for future sessions.
+Status: authentication and onboarding are implementation-complete for the hackathon build. This remains the handoff record for future sessions and public-release work.
 
-Last updated: 2026-07-30
+Last updated: 2026-07-31
 
 ## Implemented in the initial slice
 
@@ -14,8 +14,12 @@ Last updated: 2026-07-30
 - Mandatory display-name and username onboarding, with public landing-page access and protected-route gating.
 - UploadThing profile photo uploads: JPEG, PNG, and non-animated WebP; 4 MB maximum.
 - A shared session-aware header, theme control, account menu, and sign out.
+- Active-session renewal: the seven-day HTTP-only session is renewed on app load and every six hours while CoinArc remains open.
+- Resilient authenticated navigation: a temporary profile/Convex lookup failure no longer makes the shared header crash the page.
+- Transactional Circle OTP request limits using Convex's rate-limiter component: 60 requests/minute globally (120 burst), 3 per email per 15 minutes, and 10 per device per hour.
+- Avatar replacement cleanup: the new UploadThing file is saved first, then the superseded file is deleted without risking the new profile photo.
 
-The email-OTP path has been verified end to end in Vercel. External-wallet SIWE still needs a real browser-wallet and mobile WalletConnect test before it can be marked verified.
+The Circle email-OTP path, wallet creation, onboarding, avatar upload, and return to `/home` have been verified end to end on Vercel. A desktop external-wallet SIWE login has been verified. Mobile WalletConnect remains a required release test.
 
 ## Product decisions made
 
@@ -129,9 +133,9 @@ Use one authenticated profile-photo upload route per user with the following lau
 - One file per upload.
 - JPEG, PNG, or WebP only; do not accept SVG or animated formats for profile photos.
 - **4 MB maximum file size**. This balances mobile upload friction with practical profile-photo quality and is supported by UploadThing's route-level image limits.
-- Store the uploaded file reference on the CoinArc user profile only after the authenticated upload completes. Replacing a profile photo should eventually delete the superseded file.
+- Store the uploaded file reference on the CoinArc user profile only after the authenticated upload completes. Replacing a profile photo saves the new reference first, then deletes the superseded UploadThing file.
 
-UploadThing is installed and integrated. Upload state, successful upload feedback, replacement affordance, and field-specific validation errors are implemented. Profile-photo deletion and cleanup of superseded files belong in future Settings work.
+UploadThing is installed and integrated. Upload state, successful upload feedback, replacement affordance, field-specific validation errors, and cleanup of superseded files are implemented.
 
 ### Receiving and sending wallets
 
@@ -139,7 +143,7 @@ Each profile has one `primaryReceivingWalletId`, chosen only from wallets that h
 
 - Email-OTP users start with the Circle embedded wallet as the primary receiving wallet.
 - External-wallet users start with the SIWE-verified wallet as the primary receiving wallet.
-- Either user type may later link another external wallet with fresh signature proof and choose it as the primary receiving wallet in Settings.
+- Additional external-wallet linking is intentionally deferred. Do not expose it again until its re-authentication, collision, unlinking, and source-wallet rules are designed together.
 - A public profile/payment link resolves to this primary receiving wallet. Changing it requires an explicit confirmation.
 
 Receiving and sending have different UX:
@@ -190,13 +194,12 @@ An address may be linked to only one CoinArc user. Linking an additional identit
 
 ## Remaining work before public release
 
-1. **External-wallet verification**: Test SIWE with a real browser extension and mobile WalletConnect. Localhost is supported for this; its SIWE domain/URI is validated against `http://localhost:3000`, while the JWT issuer remains the production CoinArc origin.
-2. **Wallet-record verification**: With a fresh Circle email user and a SIWE user, confirm the corresponding `wallets` record is created once and marked as the primary receiving wallet. Wallet data is derived from signed server claims, never from a client-callable address argument.
-3. **Account linking UX**: Where is linking allowed, what re-authentication is required, how many external wallets may be linked, and can a user unlink a wallet?
-4. **Recovery and device changes**: Copy and support policy for lost email access, lost wallet access, token expiry, and revoked sessions.
-5. **Abuse controls**: Add server-side OTP request rate limits and resend UX before public traffic. Preserve the existing single-use attempt and nonce protections.
-6. **Terms and privacy acknowledgement**: Define the minimum launch acknowledgement and link it to the appropriate policies before production.
-7. **Production operations**: Create a Convex production deployment and point Vercel Production at it; replace Mailtrap Sandbox with a verified transactional email provider and a custom domain before real-user launch.
+1. **Verification**: Test SIWE through a real browser extension and mobile WalletConnect. Then confirm, with a fresh Circle email user and a SIWE user, that the corresponding `wallets` record is created once and marked primary. Test one profile-photo replacement and the OTP limit (a fourth request for the same email inside 15 minutes should return a clear wait message).
+2. **Account linking UX**: Define where linking is allowed, fresh proof requirements, the maximum number of external wallets, unlinking, and source-wallet selection. This feature is deliberately hidden until that design is ready.
+3. **Recovery and revocation**: Define user-facing policy and support handling for lost email access, lost wallet access, device changes, explicit session revocation, and "sign out everywhere". Current sign-out clears the browser session and active sessions roll for seven days; there is no global-revocation feature yet.
+4. **Contact email and notifications**: Add optional, separately verified contact email for external-wallet users only when an email provider and notification strategy are selected. Keep marketing consent independent and unchecked.
+5. **Terms and privacy acknowledgement**: Define the minimum launch acknowledgement and link it to final policies before accepting real users.
+6. **Production operations**: Create a Convex production deployment and point Vercel Production at it; replace Mailtrap Sandbox with a verified transactional email provider and a custom sending domain; select and monitor a dedicated production RPC provider. Add network/edge protection appropriate to public traffic in addition to the application-level OTP limits.
 
 The next product-design priority is account linking and source-wallet selection. It should be designed together with the first payment/profile data flow rather than as an unverified client-side shortcut.
 

@@ -19,6 +19,9 @@ importers:
       '@circle-fin/w3s-pw-web-sdk':
         specifier: ^1.1.11
         version: 1.1.11
+      '@convex-dev/rate-limiter':
+        specifier: ^0.3.2
+        version: 0.3.2(convex@1.42.3(react@19.2.4))(react@19.2.4)
       '@rainbow-me/rainbowkit':
         specifier: ^2.2.11
         version: 2.2.11(@tanstack/react-query@5.101.4(react@19.2.4))(@types/react@19.2.17)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.9.3)(viem@2.55.10(typescript@5.9.3)(zod@3.25.76))(wagmi@3.7.4(@tanstack/query-core@5.101.4)(@tanstack/react-query@5.101.4(react@19.2.4))(@types/react@19.2.17)(immer@11.1.15)(react@19.2.4)(typescript@5.9.3)(viem@2.55.10(typescript@5.9.3)(zod@3.25.76)))
@@ -299,6 +302,15 @@ packages:
   '@circle-fin/w3s-pw-web-sdk@1.1.11':
     resolution: {integrity: sha512-EPiIE+Os+atMHUUIodPQz6CSunSAQsClvqxBpxXNPW1CsvdNE5rnyhWDkiik8z53zgiXLtksYo0sek241edO2A==}
     engines: {node: '>=10.0.0'}
+
+  '@convex-dev/rate-limiter@0.3.2':
+    resolution: {integrity: sha512-+oBPsBfFbzdxiF/9XaaTQmVnvDlvEfg/c69/v8LxTbw4VLuiflIKlfnPQL8OS0azXQQ11hcPWHmU8ytFmHKDXA==}
+    peerDependencies:
+      convex: ^1.24.8
+      react: ^18.2.0 || ^19.0.0
+    peerDependenciesMeta:
+      react:
+        optional: true
 
   '@date-fns/tz@1.5.0':
     resolution: {integrity: sha512-lwYN/vDPeNRULcepoE/LO2Pgx+7/RV+S9ARfbc9lr2DtGkOD7pAiruHvbR1RX3Qyf6ja47EWJDMsNK5vK08DJg==}
@@ -4622,6 +4634,12 @@ snapshots:
       uuid: 9.0.1
     transitivePeerDependencies:
       - '@react-native-async-storage/async-storage'
+
+  '@convex-dev/rate-limiter@0.3.2(convex@1.42.3(react@19.2.4))(react@19.2.4)':
+    dependencies:
+      convex: 1.42.3(react@19.2.4)
+    optionalDependencies:
+      react: 19.2.4
 
   '@date-fns/tz@1.5.0': {}
 
