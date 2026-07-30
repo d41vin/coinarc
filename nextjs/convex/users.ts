@@ -166,6 +166,42 @@ export const current = query({
   },
 })
 
+export const publicProfile = query({
+  args: { username: v.string() },
+  handler: async (ctx, args) => {
+    const username = args.username.trim().toLowerCase()
+    if (!validUsername(username)) return null
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_username", (q) => q.eq("username", username))
+      .unique()
+    if (
+      !user ||
+      !user.onboardingComplete ||
+      !user.displayName ||
+      !user.username
+    )
+      return null
+
+    const wallets = await ctx.db
+      .query("wallets")
+      .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+      .take(20)
+    const primaryWallet = wallets.find((wallet) => wallet.primaryReceiving)
+    const auth = await identity(ctx)
+    const viewer = auth ? await currentUser(ctx, auth) : null
+
+    return {
+      displayName: user.displayName,
+      username: user.username,
+      avatarUrl: user.avatarUrl,
+      walletAddress: primaryWallet?.address,
+      isOwner: viewer?._id === user._id,
+    }
+  },
+})
+
 export const settings = query({
   args: {},
   handler: async (ctx) => {

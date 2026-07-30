@@ -46,11 +46,11 @@ export async function consumeSiweNonce(
   )
 }
 
-function client(session: Session) {
+function client(session?: Session | null) {
   const url = process.env.NEXT_PUBLIC_CONVEX_URL
   if (!url) throw new Error("NEXT_PUBLIC_CONVEX_URL is required")
   const convex = new ConvexHttpClient(url)
-  convex.setAuth(signJwt(session, "convex", 5 * 60))
+  if (session) convex.setAuth(signJwt(session, "convex", 5 * 60))
   return convex
 }
 
@@ -79,6 +79,27 @@ export async function sessionState(session: Session) {
     makeFunctionReference<"query">("users:current"),
     {}
   )
+}
+
+type PublicProfile = {
+  displayName: string
+  username: string
+  avatarUrl?: string
+  walletAddress?: string
+  isOwner: boolean
+}
+
+const publicProfile = makeFunctionReference<
+  "query",
+  { username: string },
+  PublicProfile | null
+>("users:publicProfile")
+
+export async function getPublicProfile(
+  username: string,
+  session?: Session | null
+) {
+  return client(session).query(publicProfile, { username })
 }
 
 export async function saveAvatarForSession(
