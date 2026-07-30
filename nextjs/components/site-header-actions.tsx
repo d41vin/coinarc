@@ -7,6 +7,7 @@ import {
   Settings,
   Sun,
   UserRound,
+  UserPlus,
   UsersRound,
 } from "lucide-react"
 import { usePathname } from "next/navigation"
@@ -164,6 +165,13 @@ export function SiteHeaderActions({
     <div className="flex items-center gap-2">
       <ThemeToggle />
       <UserSearch />
+      <Link
+        aria-label="Open friends"
+        className={buttonVariants({ size: "icon", variant: "ghost" })}
+        href="/friends"
+      >
+        <UserPlus />
+      </Link>
       <Link
         aria-label="Open groups"
         className={buttonVariants({ size: "icon", variant: "ghost" })}

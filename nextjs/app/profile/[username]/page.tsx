@@ -15,6 +15,7 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from "@/components/ui/empty"
+import { CoinArcConvexProvider } from "@/components/convex-provider"
 import { getSession } from "@/lib/auth"
 import { getPublicProfile } from "@/lib/convex-server"
 import { ProfileActions } from "./profile-actions"
@@ -41,7 +42,7 @@ export default async function PublicProfilePage({
   const profile = await getPublicProfile(username, session)
   if (!profile) notFound()
 
-  const isAuthenticated = Boolean(session?.onboardingComplete)
+  const canConnect = Boolean(session?.onboardingComplete)
 
   return (
     <main className="mx-auto min-h-[calc(100svh-4rem)] w-full max-w-2xl p-4 sm:p-6">
@@ -78,11 +79,15 @@ export default async function PublicProfilePage({
                 )}
               </div>
             </div>
-            <ProfileActions
-              isAuthenticated={isAuthenticated}
-              isOwner={profile.isOwner}
-              walletAddress={profile.walletAddress}
-            />
+            <CoinArcConvexProvider>
+              <ProfileActions
+                canConnect={canConnect}
+                isOwner={profile.isOwner}
+                isSignedIn={Boolean(session)}
+                username={profile.username}
+                walletAddress={profile.walletAddress}
+              />
+            </CoinArcConvexProvider>
           </CardContent>
         </Card>
 
