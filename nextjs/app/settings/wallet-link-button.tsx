@@ -1,5 +1,6 @@
 "use client"
 
+import { stringToHex } from "viem"
 import { createSiweMessage } from "viem/siwe"
 import { useConnect, useConnectors, useDisconnect, useSignMessage } from "wagmi"
 import { useState } from "react"
@@ -27,6 +28,14 @@ type WalletRpcProvider = {
 }
 type WalletConnector = {
   getProvider: () => Promise<unknown>
+}
+type BrowserProvider = WalletRpcProvider & {
+  isCoinbaseWallet?: boolean
+  isMetaMask?: boolean
+  isPhantom?: boolean
+  isRabby?: boolean
+  isRainbow?: boolean
+  providers?: BrowserProvider[]
 }
 
 function readableWalletError(reason: unknown, phase: LinkPhase) {
@@ -57,12 +66,46 @@ function isWalletRpcProvider(value: unknown): value is WalletRpcProvider {
   return "request" in value && typeof value.request === "function"
 }
 
-async function ensureArcTestnet(connector: WalletConnector) {
+function browserProviders() {
+  if (typeof window === "undefined") return []
+  const ethereum = (window as unknown as { ethereum?: BrowserProvider })
+    .ethereum
+  if (!ethereum) return []
+  return ethereum.providers?.length ? ethereum.providers : [ethereum]
+}
+
+function selectedBrowserProvider(walletId: string) {
+  if (typeof window === "undefined") return undefined
+  const providers = browserProviders()
+  if (walletId === "metaMask")
+    return providers.find(
+      (provider) => provider.isMetaMask && !provider.isPhantom
+    )
+  if (walletId === "coinbaseWallet") {
+    const extensionProvider = (
+      window as unknown as { coinbaseWalletExtension?: BrowserProvider }
+    ).coinbaseWalletExtension
+    return (
+      extensionProvider ??
+      providers.find((provider) => provider.isCoinbaseWallet)
+    )
+  }
+  if (walletId === "rabby")
+    return providers.find((provider) => provider.isRabby)
+  if (walletId === "rainbow")
+    return providers.find((provider) => provider.isRainbow)
+  if (walletId === "injected" && providers.length === 1) return providers[0]
+  return undefined
+}
+
+async function connectorProvider(connector: WalletConnector) {
   const candidate = await connector.getProvider()
   if (!isWalletRpcProvider(candidate))
     throw new Error("Wallet provider is unavailable")
-  const provider = candidate
+  return candidate
+}
 
+async function ensureArcTestnet(provider: WalletRpcProvider) {
   const activeChain = await provider.request({ method: "eth_chainId" })
   if (
     typeof activeChain === "string" &&
@@ -103,6 +146,28 @@ async function ensureArcTestnet(connector: WalletConnector) {
     throw new Error("Unsupported network")
 }
 
+async function requestAddress(provider: WalletRpcProvider) {
+  const accounts = await provider.request({ method: "eth_requestAccounts" })
+  const address = Array.isArray(accounts) ? accounts[0] : undefined
+  if (typeof address !== "string" || !/^0x[a-fA-F0-9]{40}$/.test(address))
+    throw new Error("Wallet did not provide an address")
+  return address as `0x${string}`
+}
+
+async function directSignature(
+  provider: WalletRpcProvider,
+  message: string,
+  address: string
+) {
+  const signature = await provider.request({
+    method: "personal_sign",
+    params: [stringToHex(message), address],
+  })
+  if (typeof signature !== "string" || !/^0x[a-fA-F0-9]+$/.test(signature))
+    throw new Error("Wallet did not provide a signature")
+  return signature as `0x${string}`
+}
+
 export function WalletLinkButton() {
   const connectors = useConnectors()
   const { connectAsync } = useConnect()
@@ -125,14 +190,21 @@ export function WalletLinkButton() {
     setStatus(`Connecting to ${connector.name}â€¦`)
 
     try {
-      await disconnectAsync().catch(() => undefined)
-      const connection = await connectAsync({ connector })
-      const address = connection.accounts[0]
-      if (!address) throw new Error("Wallet did not provide an address")
+      const directProvider = selectedBrowserProvider(connector.id)
+      const address = directProvider
+        ? await requestAddress(directProvider)
+        : await (async () => {
+            await disconnectAsync().catch(() => undefined)
+            const connection = await connectAsync({ connector })
+            const account = connection.accounts[0]
+            if (!account) throw new Error("Wallet did not provide an address")
+            return account
+          })()
+      const provider = directProvider ?? (await connectorProvider(connector))
 
       phase = "network"
       setStatus("Switching wallet to Arc Testnetâ€¦")
-      await ensureArcTestnet(connector)
+      await ensureArcTestnet(provider)
 
       setStatus("Preparing a wallet-link messageâ€¦")
       const nonceResponse = await fetch("/api/settings/wallet-link/nonce")
@@ -154,7 +226,9 @@ export function WalletLinkButton() {
       })
       phase = "signature"
       setStatus("Confirm the signature in your walletâ€¦")
-      const signature = await signMessageAsync({ message })
+      const signature = directProvider
+        ? await directSignature(provider, message, address)
+        : await signMessageAsync({ message })
 
       phase = "verification"
       setStatus("Linking walletâ€¦")
