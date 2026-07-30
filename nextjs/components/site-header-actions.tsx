@@ -25,6 +25,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import type { Session } from "@/lib/auth"
+import { UserSearch } from "@/components/user-search"
 
 type SiteHeaderActionsProps = {
   profile: {
@@ -162,6 +163,7 @@ export function SiteHeaderActions({
   return (
     <div className="flex items-center gap-2">
       <ThemeToggle />
+      <UserSearch />
       <Link
         aria-label="Open groups"
         className={buttonVariants({ size: "icon", variant: "ghost" })}
