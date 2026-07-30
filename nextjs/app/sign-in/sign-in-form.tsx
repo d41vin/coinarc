@@ -2,6 +2,7 @@
 
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 import { W3SSdk } from "@circle-fin/w3s-pw-web-sdk"
+import { useTheme } from "next-themes"
 import { useEffect, useRef, useState } from "react"
 
 import { WalletProvider } from "@/components/wallet-provider"
@@ -17,6 +18,57 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
 type LoginResult = { userToken: string; encryptionKey: string }
+type CircleThemeColor = Parameters<W3SSdk["setThemeColor"]>[0]
+
+function circleThemeColor(): CircleThemeColor {
+  const styles = window.getComputedStyle(document.documentElement)
+  const token = (name: string) => styles.getPropertyValue(name).trim()
+  const background = token("--background")
+  const card = token("--card")
+  const foreground = token("--foreground")
+  const cardForeground = token("--card-foreground")
+  const primary = token("--primary")
+  const primaryForeground = token("--primary-foreground")
+  const muted = token("--muted")
+  const mutedForeground = token("--muted-foreground")
+  const border = token("--border")
+  const ring = token("--ring")
+  const destructive = token("--destructive")
+
+  return {
+    backdrop: foreground,
+    backdropOpacity: 0.7,
+    bg: card,
+    divider: border,
+    error: destructive,
+    inputBg: background,
+    inputBorderFocused: ring,
+    inputBorderFocusedError: destructive,
+    inputText: foreground,
+    interactiveBg: muted,
+    mainBtnBg: primary,
+    mainBtnBgDisabled: muted,
+    mainBtnBgOnHover: primary,
+    mainBtnText: primaryForeground,
+    mainBtnTextDisabled: mutedForeground,
+    mainBtnTextOnHover: primaryForeground,
+    pinDotActivated: primary,
+    pinDotBase: background,
+    pinDotBaseBorder: border,
+    plainBtnText: foreground,
+    secondBtnBgOnHover: muted,
+    secondBtnBorder: border,
+    secondBtnBorderOnHover: foreground,
+    secondBtnText: foreground,
+    success: primary,
+    textAuxiliary: mutedForeground,
+    textAuxiliary2: mutedForeground,
+    textInteractive: foreground,
+    textMain: cardForeground,
+    textMain2: foreground,
+    textPlaceholder: mutedForeground,
+  }
+}
 
 export function SignInForm() {
   return (
@@ -28,6 +80,7 @@ export function SignInForm() {
 
 function SignIn() {
   const sdk = useRef<W3SSdk | null>(null)
+  const { resolvedTheme } = useTheme()
   const deviceIdRef = useRef("")
   const [email, setEmail] = useState("")
   const [deviceId, setDeviceId] = useState("")
@@ -106,6 +159,7 @@ function SignIn() {
       }
     )
 
+    instance.setThemeColor(circleThemeColor())
     sdk.current = instance
     void instance
       .getDeviceId()
@@ -116,6 +170,12 @@ function SignIn() {
       })
       .catch(() => setStatus("Could not prepare secure email sign-in."))
   }, [appId])
+
+  useEffect(() => {
+    if (sdk.current && resolvedTheme) {
+      sdk.current.setThemeColor(circleThemeColor())
+    }
+  }, [resolvedTheme])
 
   async function sendOtp() {
     if (!deviceId || !email) return
