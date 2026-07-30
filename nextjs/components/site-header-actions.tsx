@@ -11,6 +11,7 @@ import { Button, buttonVariants } from "@/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -148,18 +149,20 @@ export function SiteHeaderActions({ session }: SiteHeaderActionsProps) {
           </Avatar>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuLabel>
-            {session.email ?? "Connected wallet"}
-          </DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            disabled={signingOut}
-            onClick={() => void signOut()}
-            variant="destructive"
-          >
-            <LogOut />
-            {signingOut ? "Signing out…" : "Sign out"}
-          </DropdownMenuItem>
+          <DropdownMenuGroup>
+            <DropdownMenuLabel>
+              {session.email ?? "Connected wallet"}
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              disabled={signingOut}
+              onClick={() => void signOut()}
+              variant="destructive"
+            >
+              <LogOut />
+              {signingOut ? "Signing out…" : "Sign out"}
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
         </DropdownMenuContent>
       </DropdownMenu>
       {signOutError ? (
