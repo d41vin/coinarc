@@ -86,6 +86,8 @@ function SignIn() {
   const [deviceId, setDeviceId] = useState("")
   const [ready, setReady] = useState(false)
   const [sent, setSent] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [verifying, setVerifying] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
   const appId = process.env.NEXT_PUBLIC_CIRCLE_APP_ID
 
@@ -107,6 +109,8 @@ function SignIn() {
       }
 
       if (!response.ok || !data.destination) {
+        setVerifying(false)
+        setSent(false)
         setStatus(data.error || "Could not finish sign-in.")
         return
       }
@@ -118,7 +122,11 @@ function SignIn() {
       { appSettings: { appId } },
       async (error: unknown, result: unknown) => {
         if (error) {
-          setStatus("Email verification failed. Please try again.")
+          setVerifying(false)
+          setSent(false)
+          setStatus(
+            "Email verification failed. Request a new code and try again."
+          )
           return
         }
 
@@ -135,6 +143,8 @@ function SignIn() {
         }
 
         if (!initialized.ok) {
+          setVerifying(false)
+          setSent(false)
           setStatus(initData.error || "Could not initialize your wallet.")
           return
         }
@@ -150,6 +160,8 @@ function SignIn() {
         })
         instance.execute(initData.challengeId, (challengeError) => {
           if (challengeError) {
+            setVerifying(false)
+            setSent(false)
             setStatus("Wallet creation was not completed.")
             return
           }
@@ -178,40 +190,59 @@ function SignIn() {
   }, [resolvedTheme])
 
   async function sendOtp() {
-    if (!deviceId || !email) return
+    if (!deviceId || !email || sending) return
 
     setStatus(null)
-    const response = await fetch("/api/auth/circle/request-otp", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, deviceId }),
-    })
-    const data = (await response.json()) as {
-      deviceToken?: string
-      deviceEncryptionKey?: string
-      otpToken?: string
-      error?: string
-    }
+    setSending(true)
+    try {
+      const response = await fetch("/api/auth/circle/request-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, deviceId }),
+      })
+      const data = (await response.json()) as {
+        deviceToken?: string
+        deviceEncryptionKey?: string
+        otpToken?: string
+        error?: string
+      }
 
-    if (
-      !response.ok ||
-      !data.deviceToken ||
-      !data.deviceEncryptionKey ||
-      !data.otpToken
-    ) {
-      setStatus(data.error || "Could not send the verification code.")
-      return
-    }
+      if (
+        !response.ok ||
+        !data.deviceToken ||
+        !data.deviceEncryptionKey ||
+        !data.otpToken
+      ) {
+        setStatus(data.error || "Could not send the verification code.")
+        return
+      }
 
-    sdk.current?.updateConfigs({
-      appSettings: { appId: process.env.NEXT_PUBLIC_CIRCLE_APP_ID! },
-      loginConfigs: {
-        deviceToken: data.deviceToken,
-        deviceEncryptionKey: data.deviceEncryptionKey,
-        otpToken: data.otpToken,
-      },
-    })
-    setSent(true)
+      sdk.current?.updateConfigs({
+        appSettings: { appId: process.env.NEXT_PUBLIC_CIRCLE_APP_ID! },
+        loginConfigs: {
+          deviceToken: data.deviceToken,
+          deviceEncryptionKey: data.deviceEncryptionKey,
+          otpToken: data.otpToken,
+        },
+      })
+      setSent(true)
+    } catch {
+      setStatus("Could not send the verification code.")
+    } finally {
+      setSending(false)
+    }
+  }
+
+  function requestNewCode() {
+    setSent(false)
+    setVerifying(false)
+    setStatus(null)
+  }
+
+  function verifyOtp() {
+    setStatus(null)
+    setVerifying(true)
+    sdk.current?.verifyOtp()
   }
 
   return (
@@ -228,8 +259,12 @@ function SignIn() {
             <Label htmlFor="email">Email</Label>
             <Input
               autoComplete="email"
+              disabled={sent || sending || verifying}
               id="email"
-              onChange={(event) => setEmail(event.target.value)}
+              onChange={(event) => {
+                setEmail(event.target.value)
+                if (sent) requestNewCode()
+              }}
               placeholder="you@example.com"
               type="email"
               value={email}
@@ -239,19 +274,31 @@ function SignIn() {
               wallet. It is not marketing consent.
             </p>
             {sent ? (
-              <Button
-                className="w-full"
-                onClick={() => sdk.current?.verifyOtp()}
-              >
-                Enter verification code
-              </Button>
+              <>
+                <Button
+                  className="w-full"
+                  disabled={verifying}
+                  onClick={verifyOtp}
+                >
+                  {verifying ? "Verifyingâ€¦" : "Enter verification code"}
+                </Button>
+                <Button
+                  className="w-full"
+                  disabled={verifying}
+                  onClick={requestNewCode}
+                  type="button"
+                  variant="ghost"
+                >
+                  Request a new code
+                </Button>
+              </>
             ) : (
               <Button
                 className="w-full"
-                disabled={!appId || !ready || !email}
+                disabled={!appId || !ready || !email || sending}
                 onClick={sendOtp}
               >
-                Continue with email
+                {sending ? "Sending codeâ€¦" : "Continue with email"}
               </Button>
             )}
           </div>
