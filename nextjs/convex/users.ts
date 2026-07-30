@@ -1,6 +1,6 @@
 import { mutation, query } from "./_generated/server"
 import { v } from "convex/values"
-import type { MutationCtx } from "./_generated/server"
+import type { MutationCtx, QueryCtx } from "./_generated/server"
 import type { Id } from "./_generated/dataModel"
 
 const reserved = new Set([
@@ -73,6 +73,31 @@ function verifiedWallet(
     : null
 }
 
+function authProvider(auth: CoinArcIdentity) {
+  return auth.subject.startsWith("circle:") ? "circle" : "siwe"
+}
+
+async function currentUser(
+  ctx: MutationCtx | QueryCtx,
+  auth: CoinArcIdentity,
+  wallet = verifiedWallet(auth, authProvider(auth))
+) {
+  const directUser = await ctx.db
+    .query("users")
+    .withIndex("by_token_identifier", (q) =>
+      q.eq("tokenIdentifier", auth.tokenIdentifier)
+    )
+    .unique()
+  if (directUser) return directUser
+
+  if (!wallet || wallet.custody !== "external") return null
+  const linkedWallet = await ctx.db
+    .query("wallets")
+    .withIndex("by_address", (q) => q.eq("address", wallet.address))
+    .unique()
+  return linkedWallet ? await ctx.db.get(linkedWallet.userId) : null
+}
+
 async function ensureVerifiedWallet(
   ctx: MutationCtx,
   userId: Id<"users">,
@@ -93,6 +118,8 @@ async function ensureVerifiedWallet(
     .query("wallets")
     .withIndex("by_user_id", (q) => q.eq("userId", userId))
     .take(20)
+  if (userWallets.length >= 20)
+    throw new Error("You can link up to 20 wallets to one CoinArc account")
   await ctx.db.insert("wallets", {
     userId,
     ...wallet,
@@ -107,14 +134,9 @@ export const ensureForSession = mutation({
   handler: async (ctx) => {
     const auth = await identity(ctx)
     if (!auth) throw new Error("Unauthorized")
-    const provider = auth.subject.startsWith("circle:") ? "circle" : "siwe"
+    const provider = authProvider(auth)
     const wallet = verifiedWallet(auth, provider)
-    let user = await ctx.db
-      .query("users")
-      .withIndex("by_token_identifier", (q) =>
-        q.eq("tokenIdentifier", auth.tokenIdentifier)
-      )
-      .unique()
+    let user = await currentUser(ctx, auth, wallet)
     if (!user) {
       const id = await ctx.db.insert("users", {
         tokenIdentifier: auth.tokenIdentifier,
@@ -140,12 +162,7 @@ export const current = query({
   handler: async (ctx) => {
     const auth = await identity(ctx)
     if (!auth) return null
-    return await ctx.db
-      .query("users")
-      .withIndex("by_token_identifier", (q) =>
-        q.eq("tokenIdentifier", auth.tokenIdentifier)
-      )
-      .unique()
+    return await currentUser(ctx, auth)
   },
 })
 
@@ -154,12 +171,7 @@ export const settings = query({
   handler: async (ctx) => {
     const auth = await identity(ctx)
     if (!auth) throw new Error("Unauthorized")
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_token_identifier", (q) =>
-        q.eq("tokenIdentifier", auth.tokenIdentifier)
-      )
-      .unique()
+    const user = await currentUser(ctx, auth)
     if (!user) return null
     const wallets = await ctx.db
       .query("wallets")
@@ -182,12 +194,7 @@ export const completeOnboarding = mutation({
       )
     if (!validUsername(username))
       throw new Error("Username must follow the required format")
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_token_identifier", (q) =>
-        q.eq("tokenIdentifier", auth.tokenIdentifier)
-      )
-      .unique()
+    const user = await currentUser(ctx, auth)
     if (!user) throw new Error("Profile not found")
     const duplicate = await ctx.db
       .query("users")
@@ -217,12 +224,7 @@ export const updateProfile = mutation({
       )
     if (!validUsername(username))
       throw new Error("Username must follow the required format")
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_token_identifier", (q) =>
-        q.eq("tokenIdentifier", auth.tokenIdentifier)
-      )
-      .unique()
+    const user = await currentUser(ctx, auth)
     if (!user) throw new Error("Profile not found")
     const duplicate = await ctx.db
       .query("users")
@@ -240,12 +242,7 @@ export const setAvatar = mutation({
   handler: async (ctx, args) => {
     const auth = await identity(ctx)
     if (!auth) throw new Error("Unauthorized")
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_token_identifier", (q) =>
-        q.eq("tokenIdentifier", auth.tokenIdentifier)
-      )
-      .unique()
+    const user = await currentUser(ctx, auth)
     if (!user) throw new Error("Profile not found")
     await ctx.db.patch(user._id, args)
     return null
@@ -257,12 +254,7 @@ export const setPrimaryReceivingWallet = mutation({
   handler: async (ctx, args) => {
     const auth = await identity(ctx)
     if (!auth) throw new Error("Unauthorized")
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_token_identifier", (q) =>
-        q.eq("tokenIdentifier", auth.tokenIdentifier)
-      )
-      .unique()
+    const user = await currentUser(ctx, auth)
     if (!user) throw new Error("Profile not found")
     const selected = await ctx.db.get(args.walletId)
     if (!selected || selected.userId !== user._id)
@@ -276,6 +268,46 @@ export const setPrimaryReceivingWallet = mutation({
       if (wallet.primaryReceiving !== primaryReceiving)
         await ctx.db.patch(wallet._id, { primaryReceiving })
     }
+    return null
+  },
+})
+
+export const linkExternalWallet = mutation({
+  args: { address: v.string(), chainId: v.number() },
+  handler: async (ctx, args) => {
+    const auth = await identity(ctx)
+    if (!auth) throw new Error("Unauthorized")
+    const user = await currentUser(ctx, auth)
+    if (!user) throw new Error("Profile not found")
+    if (
+      args.chainId !== ARC_TESTNET_CHAIN_ID ||
+      !/^0x[a-fA-F0-9]{40}$/.test(args.address)
+    )
+      throw new Error("Invalid external wallet")
+
+    const address = args.address.toLowerCase()
+    await ensureVerifiedWallet(ctx, user._id, {
+      address,
+      chainId: ARC_TESTNET_CHAIN_ID,
+      custody: "external",
+    })
+
+    const existingIdentity = await ctx.db
+      .query("identities")
+      .withIndex("by_provider_and_external_id", (q) =>
+        q.eq("provider", "siwe").eq("externalId", address)
+      )
+      .unique()
+    if (existingIdentity && existingIdentity.userId !== user._id)
+      throw new Error(
+        "This wallet is already linked to another CoinArc account"
+      )
+    if (!existingIdentity)
+      await ctx.db.insert("identities", {
+        userId: user._id,
+        provider: "siwe",
+        externalId: address,
+      })
     return null
   },
 })

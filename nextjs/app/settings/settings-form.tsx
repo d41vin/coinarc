@@ -10,6 +10,7 @@ import type { OurFileRouter } from "@/app/api/uploadthing/core"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { WalletProvider } from "@/components/wallet-provider"
 import {
   Card,
   CardContent,
@@ -25,6 +26,7 @@ import {
   PROFILE_PHOTO_MIME_TYPES,
 } from "@/lib/profile-photo"
 import type { Doc, Id } from "@/convex/_generated/dataModel"
+import { WalletLinkButton } from "./wallet-link-button"
 
 const upload = genUploader<OurFileRouter>({ url: "/api/uploadthing" })
 type SettingsData = { user: Doc<"users">; wallets: Doc<"wallets">[] } | null
@@ -90,7 +92,11 @@ export function SettingsForm({ email }: SettingsFormProps) {
     )
   }
 
-  return <SettingsContent data={data} email={email} key={data.user._id} />
+  return (
+    <WalletProvider>
+      <SettingsContent data={data} email={email} key={data.user._id} />
+    </WalletProvider>
+  )
 }
 
 function SettingsContent({
@@ -297,13 +303,16 @@ function SettingsContent({
 
         <Card>
           <CardHeader>
-            <CardTitle>Receiving wallets</CardTitle>
+            <CardTitle>Connected wallets</CardTitle>
             <CardDescription>
-              Payments sent to your CoinArc profile use your primary receiving
-              wallet.
+              Link wallets you own to sign in with them. Payments sent to your
+              CoinArc profile use your primary receiving wallet.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
+            <div className="flex justify-end">
+              <WalletLinkButton />
+            </div>
             {wallets.map((wallet) => (
               <div
                 className="flex flex-col gap-3 rounded-2xl border p-4 sm:flex-row sm:items-center sm:justify-between"

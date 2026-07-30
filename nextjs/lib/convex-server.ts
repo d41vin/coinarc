@@ -8,10 +8,43 @@ function unauthenticatedClient() {
   return new ConvexHttpClient(url)
 }
 
-export async function createCircleOtpAttempt(attemptId: string, email: string, deviceId: string) { return unauthenticatedClient().mutation(makeFunctionReference<"mutation">("authAttempts:createCircleOtpAttempt"), { attemptId, email, deviceId }) }
-export async function consumeCircleOtpAttempt(attemptId: string, deviceId: string) { return unauthenticatedClient().mutation(makeFunctionReference<"mutation">("authAttempts:consumeCircleOtpAttempt"), { attemptId, deviceId }) }
-export async function createSiweNonce(nonce: string) { return unauthenticatedClient().mutation(makeFunctionReference<"mutation">("authAttempts:createSiweNonce"), { nonce }) }
-export async function consumeSiweNonce(nonce: string) { return unauthenticatedClient().mutation(makeFunctionReference<"mutation">("authAttempts:consumeSiweNonce"), { nonce }) }
+export async function createCircleOtpAttempt(
+  attemptId: string,
+  email: string,
+  deviceId: string
+) {
+  return unauthenticatedClient().mutation(
+    makeFunctionReference<"mutation">("authAttempts:createCircleOtpAttempt"),
+    { attemptId, email, deviceId }
+  )
+}
+export async function consumeCircleOtpAttempt(
+  attemptId: string,
+  deviceId: string
+) {
+  return unauthenticatedClient().mutation(
+    makeFunctionReference<"mutation">("authAttempts:consumeCircleOtpAttempt"),
+    { attemptId, deviceId }
+  )
+}
+export async function createSiweNonce(
+  nonce: string,
+  purpose: "sign-in" | "wallet-link"
+) {
+  return unauthenticatedClient().mutation(
+    makeFunctionReference<"mutation">("authAttempts:createSiweNonce"),
+    { nonce, purpose }
+  )
+}
+export async function consumeSiweNonce(
+  nonce: string,
+  purpose: "sign-in" | "wallet-link"
+) {
+  return unauthenticatedClient().mutation(
+    makeFunctionReference<"mutation">("authAttempts:consumeSiweNonce"),
+    { nonce, purpose }
+  )
+}
 
 function client(session: Session) {
   const url = process.env.NEXT_PUBLIC_CONVEX_URL
@@ -21,12 +54,40 @@ function client(session: Session) {
   return convex
 }
 
-export async function resolveSession(session: Omit<Session, "onboardingComplete">) {
-  return client({ ...session, onboardingComplete: false }).mutation(makeFunctionReference<"mutation">("users:ensureForSession"), {})
+export async function resolveSession(
+  session: Omit<Session, "onboardingComplete">
+) {
+  return client({ ...session, onboardingComplete: false }).mutation(
+    makeFunctionReference<"mutation">("users:ensureForSession"),
+    {}
+  )
 }
 
-export async function sessionState(session: Session) { return client(session).query(makeFunctionReference<"query">("users:current"), {}) }
+export async function linkExternalWalletForSession(
+  session: Session,
+  address: string,
+  chainId: number
+) {
+  return client(session).mutation(
+    makeFunctionReference<"mutation">("users:linkExternalWallet"),
+    { address, chainId }
+  )
+}
 
-export async function saveAvatarForSession(session: Session, avatarUrl: string, avatarKey: string) {
-  return client(session).mutation(makeFunctionReference<"mutation">("users:setAvatar"), { avatarUrl, avatarKey })
+export async function sessionState(session: Session) {
+  return client(session).query(
+    makeFunctionReference<"query">("users:current"),
+    {}
+  )
+}
+
+export async function saveAvatarForSession(
+  session: Session,
+  avatarUrl: string,
+  avatarKey: string
+) {
+  return client(session).mutation(
+    makeFunctionReference<"mutation">("users:setAvatar"),
+    { avatarUrl, avatarKey }
+  )
 }

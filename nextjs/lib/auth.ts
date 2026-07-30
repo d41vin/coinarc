@@ -9,6 +9,7 @@ import { cookies } from "next/headers"
 
 const SESSION_COOKIE = "coinarc_session"
 const nonceCookie = "coinarc_siwe_nonce"
+const walletLinkNonceCookie = "coinarc_wallet_link_nonce"
 const circleOtpCookie = "coinarc_circle_otp"
 
 export type WalletClaim = {
@@ -212,6 +213,37 @@ export function clearNonceCookie() {
     name: nonceCookie,
     value: "",
     options: { httpOnly: true, path: "/api/auth/siwe", maxAge: 0 },
+  }
+}
+
+export function walletLinkNonceCookieValue(nonce: string) {
+  return {
+    name: walletLinkNonceCookie,
+    value: nonce,
+    options: {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict" as const,
+      path: "/api/settings/wallet-link",
+      maxAge: 10 * 60,
+    },
+  }
+}
+
+export async function getWalletLinkNonceCookie() {
+  const value = (await cookies()).get(walletLinkNonceCookie)?.value
+  return value ?? null
+}
+
+export function clearWalletLinkNonceCookie() {
+  return {
+    name: walletLinkNonceCookie,
+    value: "",
+    options: {
+      httpOnly: true,
+      path: "/api/settings/wallet-link",
+      maxAge: 0,
+    },
   }
 }
 
