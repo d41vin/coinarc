@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { Check, Clock3, UserPlus, UserX, UsersRound } from "lucide-react"
+import { Check, Clock3, UserX, UsersRound } from "lucide-react"
 import { useState } from "react"
 import { useMutation, useQuery } from "convex/react"
 import { makeFunctionReference } from "convex/server"
