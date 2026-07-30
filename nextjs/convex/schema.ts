@@ -13,7 +13,15 @@ export default defineSchema({
     onboardingComplete: v.boolean(),
   })
     .index("by_token_identifier", ["tokenIdentifier"])
-    .index("by_username", ["username"]),
+    .index("by_username", ["username"])
+    .searchIndex("search_username", {
+      searchField: "username",
+      filterFields: ["onboardingComplete"],
+    })
+    .searchIndex("search_display_name", {
+      searchField: "displayName",
+      filterFields: ["onboardingComplete"],
+    }),
   identities: defineTable({
     userId: v.id("users"),
     provider: v.union(v.literal("circle"), v.literal("siwe")),

@@ -95,11 +95,27 @@ const publicProfile = makeFunctionReference<
   PublicProfile | null
 >("users:publicProfile")
 
+type PublicProfileSearchResult = {
+  displayName: string
+  username: string
+  avatarUrl?: string
+}
+
+const publicProfileSearch = makeFunctionReference<
+  "query",
+  { query: string },
+  PublicProfileSearchResult[]
+>("users:searchPublicProfiles")
+
 export async function getPublicProfile(
   username: string,
   session?: Session | null
 ) {
   return client(session).query(publicProfile, { username })
+}
+
+export async function searchPublicProfiles(session: Session, query: string) {
+  return client(session).query(publicProfileSearch, { query })
 }
 
 export async function saveAvatarForSession(

@@ -202,6 +202,67 @@ export const publicProfile = query({
   },
 })
 
+export const searchPublicProfiles = query({
+  args: { query: v.string() },
+  handler: async (ctx, args) => {
+    const auth = await identity(ctx)
+    if (!auth) throw new Error("Unauthorized")
+
+    const viewer = await currentUser(ctx, auth)
+    if (!viewer?.onboardingComplete)
+      throw new Error("Complete onboarding first")
+
+    const searchTerm = args.query.trim().replace(/^@+/, "").toLowerCase()
+    if (searchTerm.length < 2 || searchTerm.length > 80) return []
+
+    const exactUsername = await ctx.db
+      .query("users")
+      .withIndex("by_username", (q) => q.eq("username", searchTerm))
+      .unique()
+    const [usernameMatches, displayNameMatches] = await Promise.all([
+      ctx.db
+        .query("users")
+        .withSearchIndex("search_username", (q) =>
+          q.search("username", searchTerm).eq("onboardingComplete", true)
+        )
+        .take(8),
+      ctx.db
+        .query("users")
+        .withSearchIndex("search_display_name", (q) =>
+          q.search("displayName", searchTerm).eq("onboardingComplete", true)
+        )
+        .take(8),
+    ])
+
+    const results = []
+    const seen = new Set<Id<"users">>()
+    for (const user of [
+      exactUsername,
+      ...usernameMatches,
+      ...displayNameMatches,
+    ]) {
+      if (
+        !user ||
+        seen.has(user._id) ||
+        !user.onboardingComplete ||
+        !user.displayName ||
+        !user.username
+      ) {
+        continue
+      }
+      seen.add(user._id)
+      results.push({
+        displayName: user.displayName,
+        username: user.username,
+        avatarUrl: user.avatarUrl,
+      })
+      if (results.length === 8) break
+    }
+
+    return results
+  },
+})
+
 export const settings = query({
   args: {},
   handler: async (ctx) => {
