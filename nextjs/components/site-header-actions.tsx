@@ -1,12 +1,12 @@
 "use client"
 
 import Link from "next/link"
-import { LogOut, Moon, Sun } from "lucide-react"
+import { LogOut, Moon, Settings, Sun } from "lucide-react"
 import { usePathname } from "next/navigation"
 import { useTheme } from "next-themes"
 import { useState, useSyncExternalStore } from "react"
 
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button, buttonVariants } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -20,6 +20,11 @@ import {
 import type { Session } from "@/lib/auth"
 
 type SiteHeaderActionsProps = {
+  profile: {
+    avatarUrl?: string
+    displayName?: string
+    username?: string
+  } | null
   session: Session | null
 }
 
@@ -60,7 +65,19 @@ function sessionInitial(session: Session) {
   return session.provider === "siwe" ? "W" : "C"
 }
 
-export function SiteHeaderActions({ session }: SiteHeaderActionsProps) {
+function profileInitial(profile: SiteHeaderActionsProps["profile"], session: Session) {
+  const initials = profile?.displayName
+    ?.trim()
+    .split(/\s+/)
+    .map((word) => word[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase()
+
+  return initials || sessionInitial(session)
+}
+
+export function SiteHeaderActions({ profile, session }: SiteHeaderActionsProps) {
   const pathname = usePathname()
   const [signingOut, setSigningOut] = useState(false)
   const [signOutError, setSignOutError] = useState<string | null>(null)
@@ -132,6 +149,14 @@ export function SiteHeaderActions({ session }: SiteHeaderActionsProps) {
   return (
     <div className="flex items-center gap-2">
       <ThemeToggle />
+      <Link
+        aria-label="Open settings"
+        className={buttonVariants({ size: "sm", variant: "ghost" })}
+        href="/settings"
+      >
+        <Settings />
+        <span className="hidden sm:inline">Settings</span>
+      </Link>
       {pathname !== "/home" ? (
         <Link className={buttonVariants({ size: "sm" })} href="/home">
           Open CoinArc
@@ -143,15 +168,25 @@ export function SiteHeaderActions({ session }: SiteHeaderActionsProps) {
           className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
           <Avatar size="sm">
+            {profile?.avatarUrl ? (
+              <AvatarImage alt="" src={profile.avatarUrl} />
+            ) : null}
             <AvatarFallback className="bg-primary text-primary-foreground">
-              {sessionInitial(session)}
+              {profileInitial(profile, session)}
             </AvatarFallback>
           </Avatar>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuGroup>
             <DropdownMenuLabel>
-              {session.email ?? "Connected wallet"}
+              <span className="block truncate text-foreground">
+                {profile?.displayName ?? session.email ?? "Connected wallet"}
+              </span>
+              {profile?.username ? (
+                <span className="block truncate">@{profile.username}</span>
+              ) : session.email ? (
+                <span className="block truncate">{session.email}</span>
+              ) : null}
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem
