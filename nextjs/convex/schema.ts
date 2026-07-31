@@ -39,6 +39,53 @@ export default defineSchema({
   })
     .index("by_address", ["address"])
     .index("by_user_id", ["userId"]),
+  payments: defineTable({
+    senderId: v.id("users"),
+    recipientUserId: v.optional(v.id("users")),
+    sourceWalletAddress: v.string(),
+    sourceCustody: v.union(v.literal("circle"), v.literal("external")),
+    circleWalletId: v.optional(v.string()),
+    destinationAddress: v.string(),
+    amountBaseUnits: v.string(),
+    clientRequestId: v.string(),
+    status: v.union(
+      v.literal("draft"),
+      v.literal("awaiting-approval"),
+      v.literal("submitted"),
+      v.literal("confirmed"),
+      v.literal("failed"),
+      v.literal("cancelled")
+    ),
+    circleChallengeId: v.optional(v.string()),
+    circleTransactionId: v.optional(v.string()),
+    txHash: v.optional(v.string()),
+    failureReason: v.optional(v.string()),
+    createdAt: v.number(),
+    submittedAt: v.optional(v.number()),
+    confirmedAt: v.optional(v.number()),
+    failedAt: v.optional(v.number()),
+  })
+    .index("by_sender_id_and_client_request_id", [
+      "senderId",
+      "clientRequestId",
+    ])
+    .index("by_sender_id_and_created_at", ["senderId", "createdAt"])
+    .index("by_recipient_id_and_created_at", ["recipientUserId", "createdAt"])
+    .index("by_tx_hash", ["txHash"]),
+  paymentNotes: defineTable({
+    paymentId: v.id("payments"),
+    senderId: v.id("users"),
+    recipientId: v.id("users"),
+    body: v.string(),
+    createdAt: v.number(),
+  }).index("by_payment_id", ["paymentId"]),
+  activityItems: defineTable({
+    userId: v.id("users"),
+    actorId: v.id("users"),
+    type: v.union(v.literal("payment-sent"), v.literal("payment-received")),
+    source: v.object({ type: v.literal("payment"), id: v.id("payments") }),
+    createdAt: v.number(),
+  }).index("by_user_id_and_created_at", ["userId", "createdAt"]),
   homePreferences: defineTable({
     userId: v.id("users"),
     pinnedActions: v.array(
@@ -103,10 +150,7 @@ export default defineSchema({
     clientMessageId: v.string(),
     createdAt: v.number(),
   })
-    .index("by_conversation_id_and_created_at", [
-      "conversationId",
-      "createdAt",
-    ])
+    .index("by_conversation_id_and_created_at", ["conversationId", "createdAt"])
     .index("by_conversation_id_and_client_message_id", [
       "conversationId",
       "clientMessageId",
@@ -132,12 +176,16 @@ export default defineSchema({
     type: v.union(
       v.literal("friend-request-received"),
       v.literal("friend-request-accepted"),
-      v.literal("friend-request-declined")
+      v.literal("friend-request-declined"),
+      v.literal("payment-received")
     ),
-    source: v.object({
-      type: v.literal("friend-request"),
-      id: v.id("friendRequests"),
-    }),
+    source: v.union(
+      v.object({
+        type: v.literal("friend-request"),
+        id: v.id("friendRequests"),
+      }),
+      v.object({ type: v.literal("payment"), id: v.id("payments") })
+    ),
     createdAt: v.number(),
     isRead: v.boolean(),
     readAt: v.optional(v.number()),

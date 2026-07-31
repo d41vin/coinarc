@@ -1,6 +1,6 @@
 import { ConvexHttpClient } from "convex/browser"
 import { makeFunctionReference } from "convex/server"
-import { signJwt, type Session } from "@/lib/auth"
+import { signJwt, signPaymentReconciliationJwt, type Session } from "@/lib/auth"
 
 function unauthenticatedClient() {
   const url = process.env.NEXT_PUBLIC_CONVEX_URL
@@ -46,11 +46,20 @@ export async function consumeSiweNonce(
   )
 }
 
-function client(session?: Session | null) {
+function client(
+  session?: Session | null,
+  options?: { paymentReconciliation?: boolean }
+) {
   const url = process.env.NEXT_PUBLIC_CONVEX_URL
   if (!url) throw new Error("NEXT_PUBLIC_CONVEX_URL is required")
   const convex = new ConvexHttpClient(url)
-  if (session) convex.setAuth(signJwt(session, "convex", 5 * 60))
+  if (session) {
+    convex.setAuth(
+      options?.paymentReconciliation
+        ? signPaymentReconciliationJwt(session)
+        : signJwt(session, "convex", 5 * 60)
+    )
+  }
   return convex
 }
 
@@ -142,5 +151,113 @@ export async function saveAvatarForSession(
   return client(session).mutation(
     makeFunctionReference<"mutation">("users:setAvatar"),
     { avatarUrl, avatarKey }
+  )
+}
+
+export type PaymentExecution = {
+  _id: string
+  senderId: string
+  recipientUserId?: string
+  sourceWalletAddress: string
+  sourceCustody: "circle" | "external"
+  circleWalletId?: string
+  destinationAddress: string
+  amountBaseUnits: string
+  clientRequestId: string
+  status:
+    | "draft"
+    | "awaiting-approval"
+    | "submitted"
+    | "confirmed"
+    | "failed"
+    | "cancelled"
+  circleChallengeId?: string
+  circleTransactionId?: string
+  txHash?: string
+}
+
+const paymentExecution = makeFunctionReference<
+  "query",
+  { paymentId: string },
+  PaymentExecution
+>("payments:execution")
+const attachCirclePaymentChallenge = makeFunctionReference<
+  "mutation",
+  { paymentId: string; challengeId: string },
+  null
+>("payments:attachCircleChallenge")
+const recordPaymentSubmitted = makeFunctionReference<
+  "mutation",
+  {
+    paymentId: string
+    txHash: string
+    circleTransactionId?: string
+  },
+  null
+>("payments:recordSubmitted")
+const confirmPayment = makeFunctionReference<
+  "mutation",
+  { paymentId: string; txHash: string },
+  { confirmed: boolean }
+>("payments:confirm")
+const failPayment = makeFunctionReference<
+  "mutation",
+  { paymentId: string; reason: string },
+  null
+>("payments:fail")
+
+export async function paymentForSession(session: Session, paymentId: string) {
+  return await client(session).query(paymentExecution, { paymentId })
+}
+
+export async function attachCircleChallengeForSession(
+  session: Session,
+  paymentId: string,
+  challengeId: string
+) {
+  return await client(session, { paymentReconciliation: true }).mutation(
+    attachCirclePaymentChallenge,
+    {
+      paymentId,
+      challengeId,
+    }
+  )
+}
+
+export async function recordPaymentSubmittedForSession(
+  session: Session,
+  paymentId: string,
+  txHash: string,
+  circleTransactionId?: string
+) {
+  return await client(session, { paymentReconciliation: true }).mutation(
+    recordPaymentSubmitted,
+    {
+      paymentId,
+      txHash,
+      ...(circleTransactionId ? { circleTransactionId } : {}),
+    }
+  )
+}
+
+export async function confirmPaymentForSession(
+  session: Session,
+  paymentId: string,
+  txHash: string
+) {
+  return await client(session, { paymentReconciliation: true }).mutation(
+    confirmPayment,
+    { paymentId, txHash }
+  )
+}
+
+export async function failPaymentForSession(
+  session: Session,
+  paymentId: string,
+  reason: string
+) {
+  return await client(session, { paymentReconciliation: true }).mutation(
+    failPayment,
+    { paymentId, reason }
   )
 }

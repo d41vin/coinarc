@@ -21,6 +21,7 @@ type NotificationType =
   | "friend-request-received"
   | "friend-request-accepted"
   | "friend-request-declined"
+  | "payment-received"
 
 type NotificationActor = {
   avatarUrl?: string
@@ -181,6 +182,32 @@ export async function createFriendRequestNotification(
   await retainNewestNotifications(ctx, recipientId)
 }
 
+export async function createPaymentReceivedNotification(
+  ctx: MutationCtx,
+  {
+    recipientId,
+    actorId,
+    paymentId,
+    createdAt,
+  }: {
+    recipientId: Id<"users">
+    actorId: Id<"users">
+    paymentId: Id<"payments">
+    createdAt: number
+  }
+) {
+  await ctx.db.insert("notifications", {
+    recipientId,
+    actorId,
+    type: "payment-received",
+    source: { type: "payment", id: paymentId },
+    createdAt,
+    isRead: false,
+  })
+  await changeUnreadCount(ctx, recipientId, 1)
+  await retainNewestNotifications(ctx, recipientId)
+}
+
 export async function deleteNotificationsForFriendRequest(
   ctx: MutationCtx,
   requestId: Id<"friendRequests">
@@ -218,6 +245,7 @@ export const list = query({
         return {
           _id: notification._id,
           type: notification.type,
+          source: notification.source,
           createdAt: notification.createdAt,
           isRead: notification.isRead,
           actor,

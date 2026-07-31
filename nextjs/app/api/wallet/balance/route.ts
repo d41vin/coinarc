@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server"
-import { createPublicClient, formatUnits, http } from "viem"
+import { createPublicClient, formatUnits, http, type Address } from "viem"
 
-import { ARC_TESTNET_RPC } from "@/lib/arc-testnet"
+import {
+  ARC_TESTNET_RPC,
+  ARC_TESTNET_USDC_ADDRESS,
+  ARC_TESTNET_USDC_DECIMALS,
+  arcUsdcAbi,
+} from "@/lib/arc-testnet"
 import { getSession } from "@/lib/auth"
 import { primaryWalletForSession } from "@/lib/convex-server"
 
@@ -40,10 +45,15 @@ export async function GET() {
   try {
     const balance = await createPublicClient({
       transport: http(ARC_TESTNET_RPC),
-    }).getBalance({ address: address as `0x${string}` })
+    }).readContract({
+      address: ARC_TESTNET_USDC_ADDRESS,
+      abi: arcUsdcAbi,
+      functionName: "balanceOf",
+      args: [address as Address],
+    })
 
     return NextResponse.json({
-      amount: formatUnits(balance, 6),
+      amount: formatUnits(balance, ARC_TESTNET_USDC_DECIMALS),
       balanceAvailable: true,
       walletAvailable: true,
     })

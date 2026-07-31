@@ -8,10 +8,12 @@
  * @module
  */
 
+import type * as activity from "../activity.js";
 import type * as authAttempts from "../authAttempts.js";
 import type * as directMessages from "../directMessages.js";
 import type * as friends from "../friends.js";
 import type * as notifications from "../notifications.js";
+import type * as payments from "../payments.js";
 import type * as users from "../users.js";
 
 import type {
@@ -21,10 +23,12 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  activity: typeof activity;
   authAttempts: typeof authAttempts;
   directMessages: typeof directMessages;
   friends: typeof friends;
   notifications: typeof notifications;
+  payments: typeof payments;
   users: typeof users;
 }>;
 

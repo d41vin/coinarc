@@ -5,7 +5,6 @@ import { W3SSdk } from "@circle-fin/w3s-pw-web-sdk"
 import { useTheme } from "next-themes"
 import { useEffect, useRef, useState } from "react"
 
-import { WalletProvider } from "@/components/wallet-provider"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -16,8 +15,13 @@ import {
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { saveCircleAuthorization } from "@/lib/circle-authorization"
 
-type LoginResult = { userToken: string; encryptionKey: string }
+type LoginResult = {
+  userToken: string
+  encryptionKey: string
+  refreshToken?: string
+}
 type CircleThemeColor = Parameters<W3SSdk["setThemeColor"]>[0]
 
 function circleThemeColor(): CircleThemeColor {
@@ -71,11 +75,7 @@ function circleThemeColor(): CircleThemeColor {
 }
 
 export function SignInForm() {
-  return (
-    <WalletProvider>
-      <SignIn />
-    </WalletProvider>
-  )
+  return <SignIn />
 }
 
 function SignIn() {
@@ -131,6 +131,7 @@ function SignIn() {
         }
 
         const login = result as LoginResult
+        saveCircleAuthorization(login)
         const initialized = await fetch("/api/auth/circle/initialize", {
           method: "POST",
           headers: { "Content-Type": "application/json" },

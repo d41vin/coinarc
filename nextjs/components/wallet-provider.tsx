@@ -21,7 +21,12 @@ import { injected, type InjectedParameters } from "wagmi/connectors"
 import { defineChain } from "viem"
 import { createSiweMessage } from "viem/siwe"
 import { useState, type ReactNode } from "react"
-import { ARC_TESTNET_CHAIN_ID, ARC_TESTNET_RPC } from "@/lib/arc-testnet"
+import {
+  ARC_TESTNET_CHAIN_ID,
+  ARC_TESTNET_EXPLORER,
+  ARC_TESTNET_NATIVE_USDC_DECIMALS,
+  ARC_TESTNET_RPC,
+} from "@/lib/arc-testnet"
 
 type BrowserProvider = Extract<
   Extract<
@@ -107,8 +112,15 @@ const singleProviderWallet = () => {
 const arcTestnet = defineChain({
   id: ARC_TESTNET_CHAIN_ID,
   name: "Arc Testnet",
-  nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 6 },
+  nativeCurrency: {
+    name: "USDC",
+    symbol: "USDC",
+    decimals: ARC_TESTNET_NATIVE_USDC_DECIMALS,
+  },
   rpcUrls: { default: { http: [ARC_TESTNET_RPC] } },
+  blockExplorers: {
+    default: { name: "Arcscan", url: ARC_TESTNET_EXPLORER },
+  },
   testnet: true,
 })
 const config = getDefaultConfig({

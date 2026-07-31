@@ -15,7 +15,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { ARC_TESTNET_CHAIN_ID, ARC_TESTNET_RPC } from "@/lib/arc-testnet"
+import {
+  ARC_TESTNET_CHAIN_ID,
+  ARC_TESTNET_EXPLORER,
+  ARC_TESTNET_NATIVE_USDC_DECIMALS,
+  ARC_TESTNET_RPC,
+} from "@/lib/arc-testnet"
 
 type NonceResponse = { nonce?: string; error?: string }
 type VerifyResponse = { address?: string; error?: string }
@@ -127,8 +132,13 @@ async function ensureArcTestnet(provider: WalletRpcProvider) {
         {
           chainId,
           chainName: "Arc Testnet",
-          nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 6 },
+          nativeCurrency: {
+            name: "USDC",
+            symbol: "USDC",
+            decimals: ARC_TESTNET_NATIVE_USDC_DECIMALS,
+          },
           rpcUrls: [ARC_TESTNET_RPC],
+          blockExplorerUrls: [ARC_TESTNET_EXPLORER],
         },
       ],
     })

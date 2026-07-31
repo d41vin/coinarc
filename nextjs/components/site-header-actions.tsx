@@ -29,6 +29,7 @@ import type { Session } from "@/lib/auth"
 import { HeaderMessageButton } from "@/components/messages/messages"
 import { UserSearch } from "@/components/user-search"
 import { HeaderNotificationCenter } from "@/components/notification-center"
+import { clearCircleAuthorization } from "@/lib/circle-authorization"
 
 type SiteHeaderActionsProps = {
   profile: {
@@ -120,6 +121,7 @@ export function SiteHeaderActions({
   async function signOut() {
     setSigningOut(true)
     setSignOutError(null)
+    clearCircleAuthorization()
 
     try {
       const response = await fetch("/api/auth/sign-out", { method: "POST" })

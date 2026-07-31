@@ -47,7 +47,8 @@ function privateKey() {
 export function signJwt(
   session: Session,
   audience: "coinarc-web" | "convex" | "siwe-nonce" | "circle-otp",
-  lifetimeSeconds: number
+  lifetimeSeconds: number,
+  options?: { paymentReconciliation?: boolean }
 ) {
   const now = Math.floor(Date.now() / 1000)
   const header = base64url(
@@ -68,10 +69,19 @@ export function signJwt(
       walletChainId: session.wallet?.chainId,
       walletCustody: session.wallet?.custody,
       circleWalletId: session.wallet?.circleWalletId,
+      ...(options?.paymentReconciliation
+        ? { paymentReconciliation: true }
+        : {}),
     })
   )
   const input = `${header}.${payload}`
   return `${input}.${sign("RSA-SHA256", Buffer.from(input), privateKey()).toString("base64url")}`
+}
+
+export function signPaymentReconciliationJwt(session: Session) {
+  return signJwt(session, "convex", 5 * 60, {
+    paymentReconciliation: true,
+  })
 }
 
 function parseJwt(token: string) {

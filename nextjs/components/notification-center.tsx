@@ -5,6 +5,7 @@ import { Bell, Check, UserRoundX } from "lucide-react"
 import { useState } from "react"
 import { useConvexAuth, useMutation, useQuery } from "convex/react"
 import { makeFunctionReference } from "convex/server"
+import { useRouter } from "next/navigation"
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
@@ -30,6 +31,9 @@ type Notification = {
     | "friend-request-received"
     | "friend-request-accepted"
     | "friend-request-declined"
+    | "payment-received"
+  source:
+    { type: "friend-request"; id: string } | { type: "payment"; id: string }
   createdAt: number
   isRead: boolean
   actor: {
@@ -81,6 +85,8 @@ function notificationMessage(notification: Notification) {
       return "accepted your friend request."
     case "friend-request-declined":
       return "declined your friend request."
+    case "payment-received":
+      return "sent you a payment."
   }
 }
 
@@ -89,6 +95,7 @@ function notificationTime(createdAt: number) {
 }
 
 function NotificationCenter() {
+  const router = useRouter()
   const { isAuthenticated } = useConvexAuth()
   const notifications = useQuery(
     listNotifications,
@@ -104,6 +111,7 @@ function NotificationCenter() {
   const decline = useMutation(declineRequest)
   const [busy, setBusy] = useState<string>()
   const [error, setError] = useState<string>()
+  const [open, setOpen] = useState(false)
 
   const unreadLabel = unreadCount ?? 0
   const badgeLabel = unreadLabel > 99 ? "99+" : unreadLabel
@@ -128,7 +136,7 @@ function NotificationCenter() {
   }
 
   return (
-    <Sheet>
+    <Sheet onOpenChange={setOpen} open={open}>
       <SheetTrigger
         aria-label={
           unreadLabel > 0
@@ -171,7 +179,7 @@ function NotificationCenter() {
             </Button>
           </div>
           <SheetDescription>
-            Friend activity and future CoinArc updates appear here.
+            Payment and friend activity appears here.
           </SheetDescription>
         </SheetHeader>
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
@@ -215,6 +223,18 @@ function NotificationCenter() {
                       markRead({ notificationId: notification._id })
                     )
                   }
+                  onOpenPayment={() =>
+                    void updateNotification(
+                      `payment:${notification._id}`,
+                      async () => {
+                        if (!notification.isRead) {
+                          await markRead({ notificationId: notification._id })
+                        }
+                        setOpen(false)
+                        router.push(`/home?payment=${notification.source.id}`)
+                      }
+                    )
+                  }
                 />
               ))}
             </div>
@@ -231,15 +251,39 @@ function NotificationRow({
   onAccept,
   onDecline,
   onMarkRead,
+  onOpenPayment,
 }: {
   busy?: string
   notification: Notification
   onAccept: () => void
   onDecline: () => void
   onMarkRead: () => void
+  onOpenPayment: () => void
 }) {
   const actionKey = (action: string) => `${action}:${notification._id}`
   const isRequest = notification.type === "friend-request-received"
+  const isPayment = notification.type === "payment-received"
+  const summary = (
+    <div className="flex gap-3">
+      <Avatar>
+        {notification.actor.avatarUrl ? (
+          <AvatarImage alt="" src={notification.actor.avatarUrl} />
+        ) : null}
+        <AvatarFallback className="bg-primary text-primary-foreground">
+          {initials(notification.actor.displayName)}
+        </AvatarFallback>
+      </Avatar>
+      <div className="min-w-0 flex-1">
+        <p className="text-left text-sm leading-5">
+          <span className="font-medium">{notification.actor.displayName}</span>{" "}
+          {notificationMessage(notification)}
+        </p>
+        <p className="mt-1 text-left text-xs text-muted-foreground">
+          {notificationTime(notification.createdAt)}
+        </p>
+      </div>
+    </div>
+  )
 
   return (
     <article
@@ -248,27 +292,19 @@ function NotificationRow({
         !notification.isRead && "bg-muted/50"
       )}
     >
-      <div className="flex gap-3">
-        <Avatar>
-          {notification.actor.avatarUrl ? (
-            <AvatarImage alt="" src={notification.actor.avatarUrl} />
-          ) : null}
-          <AvatarFallback className="bg-primary text-primary-foreground">
-            {initials(notification.actor.displayName)}
-          </AvatarFallback>
-        </Avatar>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm leading-5">
-            <span className="font-medium">
-              {notification.actor.displayName}
-            </span>{" "}
-            {notificationMessage(notification)}
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {notificationTime(notification.createdAt)}
-          </p>
-        </div>
-      </div>
+      {isPayment ? (
+        <Button
+          className="h-auto w-full justify-start p-0 text-left hover:bg-transparent"
+          disabled={busy !== undefined}
+          onClick={onOpenPayment}
+          type="button"
+          variant="ghost"
+        >
+          {summary}
+        </Button>
+      ) : (
+        summary
+      )}
       <div className="mt-3 flex flex-wrap gap-2">
         {isRequest ? (
           <>
@@ -293,7 +329,7 @@ function NotificationRow({
             </Button>
           </>
         ) : null}
-        {!notification.isRead ? (
+        {!notification.isRead && !isPayment ? (
           <Button
             disabled={busy !== undefined}
             onClick={onMarkRead}

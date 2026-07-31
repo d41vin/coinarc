@@ -4,6 +4,7 @@ import "@/styles/globals.css"
 import { CoinArcConvexProvider } from "@/components/convex-provider"
 import { SiteHeader } from "@/components/site-header"
 import { ThemeProvider } from "@/components/theme-provider"
+import { WalletProvider } from "@/components/wallet-provider"
 import { cn } from "@/lib/utils"
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" })
@@ -31,10 +32,12 @@ export default async function RootLayout({
     >
       <body>
         <ThemeProvider>
-          <CoinArcConvexProvider>
-            <SiteHeader />
-            {children}
-          </CoinArcConvexProvider>
+          <WalletProvider>
+            <CoinArcConvexProvider>
+              <SiteHeader />
+              {children}
+            </CoinArcConvexProvider>
+          </WalletProvider>
         </ThemeProvider>
       </body>
     </html>

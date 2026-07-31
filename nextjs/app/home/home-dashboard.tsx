@@ -12,13 +12,16 @@ import {
   Repeat2,
   Send,
   UsersRound,
-  WalletCards,
 } from "lucide-react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { useEffect, useState, useSyncExternalStore } from "react"
 import { useConvexAuth, useMutation, useQuery } from "convex/react"
 import { makeFunctionReference } from "convex/server"
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { ActivityFeed } from "@/components/activity/activity-feed"
+import { PayDrawer } from "@/components/payments/pay-drawer"
+import { PaymentDetailDialog } from "@/components/payments/payment-detail-dialog"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -286,25 +289,35 @@ function WalletBalance() {
   const [balance, setBalance] = useState<BalanceData>()
 
   useEffect(() => {
-    const controller = new AbortController()
+    let controller: AbortController | undefined
+    const refresh = () => {
+      controller?.abort()
+      controller = new AbortController()
+      void fetch("/api/wallet/balance", { signal: controller.signal })
+        .then(async (response) => {
+          if (!response.ok) throw new Error("Could not load balance")
+          return (await response.json()) as BalanceData
+        })
+        .then((data) => setBalance(data))
+        .catch((reason: unknown) => {
+          if (!(
+            reason instanceof DOMException && reason.name === "AbortError"
+          )) {
+            setBalance({
+              amount: null,
+              balanceAvailable: false,
+              walletAvailable: false,
+            })
+          }
+        })
+    }
 
-    void fetch("/api/wallet/balance", { signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("Could not load balance")
-        return (await response.json()) as BalanceData
-      })
-      .then((data) => setBalance(data))
-      .catch((reason: unknown) => {
-        if (!(reason instanceof DOMException && reason.name === "AbortError")) {
-          setBalance({
-            amount: null,
-            balanceAvailable: false,
-            walletAvailable: false,
-          })
-        }
-      })
-
-    return () => controller.abort()
+    refresh()
+    window.addEventListener("coinarc:payment-confirmed", refresh)
+    return () => {
+      controller?.abort()
+      window.removeEventListener("coinarc:payment-confirmed", refresh)
+    }
   }, [])
 
   const balanceLabel = balance?.amount ? `${balance.amount} USDC` : "â€” USDC"
@@ -328,23 +341,6 @@ function WalletBalance() {
       </p>
       <p className="mt-2 text-sm text-primary-foreground/70">{detail}</p>
     </div>
-  )
-}
-
-function ActivityPanel() {
-  return (
-    <Empty className="min-h-60 border-dashed">
-      <EmptyHeader>
-        <EmptyMedia variant="icon">
-          <WalletCards />
-        </EmptyMedia>
-        <EmptyTitle>No activity yet</EmptyTitle>
-        <EmptyDescription>
-          Payments, requests, and splits will appear here once they are
-          available.
-        </EmptyDescription>
-      </EmptyHeader>
-    </Empty>
   )
 }
 
@@ -413,6 +409,8 @@ function FriendsPanel({ data }: { data: FriendsData | undefined }) {
 }
 
 export function HomeDashboard({ displayName }: { displayName: string }) {
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const { isAuthenticated } = useConvexAuth()
   const friends = useQuery(listFriends, isAuthenticated ? {} : "skip")
   const savedPinnedActions = useQuery(
@@ -425,6 +423,21 @@ export function HomeDashboard({ displayName }: { displayName: string }) {
   const [isSavingPins, setIsSavingPins] = useState(false)
   const [pinError, setPinError] = useState<string>()
   const pinnedActionIds = new Set(savedPinnedActions ?? [])
+  const selectedPaymentId = searchParams.get("payment")
+
+  function openPayment(paymentId: string) {
+    const next = new URLSearchParams(searchParams.toString())
+    next.set("payment", paymentId)
+    router.push(`/home?${next.toString()}`)
+  }
+
+  function closePaymentDetail(open: boolean) {
+    if (open) return
+    const next = new URLSearchParams(searchParams.toString())
+    next.delete("payment")
+    const query = next.toString()
+    router.replace(query ? `/home?${query}` : "/home")
+  }
 
   async function togglePinned(actionId: AdditionalActionId) {
     if (isSavingPins || savedPinnedActions === undefined) return
@@ -512,7 +525,7 @@ export function HomeDashboard({ displayName }: { displayName: string }) {
                 <TabsTrigger value="friends">Friends</TabsTrigger>
               </TabsList>
               <TabsContent className="pt-4" value="activity">
-                <ActivityPanel />
+                <ActivityFeed onOpenPayment={openPayment} />
               </TabsContent>
               <TabsContent className="pt-4" value="friends">
                 <FriendsPanel data={friends} />
@@ -526,7 +539,7 @@ export function HomeDashboard({ displayName }: { displayName: string }) {
         onOpenChange={(open) => {
           if (!open) setActiveAction(null)
         }}
-        open={activeAction !== null}
+        open={activeAction !== null && activeAction.id !== "pay"}
         showSwipeHandle
       >
         <DrawerContent>
@@ -558,6 +571,17 @@ export function HomeDashboard({ displayName }: { displayName: string }) {
           ) : null}
         </DrawerContent>
       </Drawer>
+      <PayDrawer
+        onOpenChange={(open) => {
+          if (!open) setActiveAction(null)
+        }}
+        onOpenPayment={openPayment}
+        open={activeAction?.id === "pay"}
+      />
+      <PaymentDetailDialog
+        onOpenChange={closePaymentDetail}
+        paymentId={selectedPaymentId}
+      />
     </main>
   )
 }
