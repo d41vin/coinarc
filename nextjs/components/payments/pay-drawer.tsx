@@ -424,7 +424,7 @@ export function PayDrawer({
 
   return (
     <Drawer onOpenChange={handleDrawerOpenChange} open={open} showSwipeHandle>
-      <DrawerContent className="md:[--drawer-content-width:36rem] md:data-[swipe-axis=y]:!right-auto md:data-[swipe-axis=y]:!left-1/2 md:data-[swipe-axis=y]:[--translate-x:-50%]">
+      <DrawerContent className="md:!mx-auto md:[--drawer-content-width:39rem]">
         <DrawerHeader>
           <DrawerTitle>Pay</DrawerTitle>
           <DrawerDescription>

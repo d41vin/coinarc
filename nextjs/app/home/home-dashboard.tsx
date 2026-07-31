@@ -553,7 +553,7 @@ export function HomeDashboard({
         }
         showSwipeHandle
       >
-        <DrawerContent>
+        <DrawerContent className="md:!mx-auto md:[--drawer-content-width:39rem]">
           {activeAction ? (
             <>
               <DrawerHeader>
