@@ -26,6 +26,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import type { Session } from "@/lib/auth"
+import { HeaderMessageButton } from "@/components/messages/messages"
 import { UserSearch } from "@/components/user-search"
 import { HeaderNotificationCenter } from "@/components/notification-center"
 
@@ -184,6 +185,7 @@ export function SiteHeaderActions({
     <div className="flex items-center gap-2">
       <ThemeToggle />
       <UserSearch />
+      <HeaderMessageButton />
       <HeaderNotificationCenter />
       <Link
         aria-label="Open friends"

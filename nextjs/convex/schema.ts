@@ -70,6 +70,62 @@ export default defineSchema({
     blockedId: v.id("users"),
     createdAt: v.number(),
   }).index("by_blocker_id_and_blocked_id", ["blockerId", "blockedId"]),
+  directConversations: defineTable({
+    participantAId: v.id("users"),
+    participantBId: v.id("users"),
+    isArchived: v.boolean(),
+    createdAt: v.number(),
+    archivedAt: v.optional(v.number()),
+  }).index("by_participant_a_id_and_participant_b_id", [
+    "participantAId",
+    "participantBId",
+  ]),
+  directConversationMembers: defineTable({
+    conversationId: v.id("directConversations"),
+    userId: v.id("users"),
+    otherUserId: v.id("users"),
+    isArchived: v.boolean(),
+    lastMessageId: v.id("directMessages"),
+    lastMessageAt: v.number(),
+    unreadCount: v.number(),
+  })
+    .index("by_conversation_id", ["conversationId"])
+    .index("by_conversation_id_and_user_id", ["conversationId", "userId"])
+    .index("by_user_id_and_is_archived_and_last_message_at", [
+      "userId",
+      "isArchived",
+      "lastMessageAt",
+    ]),
+  directMessages: defineTable({
+    conversationId: v.id("directConversations"),
+    senderId: v.id("users"),
+    body: v.string(),
+    clientMessageId: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_conversation_id_and_created_at", [
+      "conversationId",
+      "createdAt",
+    ])
+    .index("by_conversation_id_and_client_message_id", [
+      "conversationId",
+      "clientMessageId",
+    ]),
+  directMessageReactions: defineTable({
+    messageId: v.id("directMessages"),
+    userId: v.id("users"),
+    emoji: v.union(
+      v.literal("👍"),
+      v.literal("❤️"),
+      v.literal("😂"),
+      v.literal("👀")
+    ),
+    createdAt: v.number(),
+  }).index("by_message_id_and_user_id", ["messageId", "userId"]),
+  directMessageStates: defineTable({
+    userId: v.id("users"),
+    unreadCount: v.number(),
+  }).index("by_user_id", ["userId"]),
   notifications: defineTable({
     recipientId: v.id("users"),
     actorId: v.id("users"),

@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { Check, Clock3, UserX, UsersRound } from "lucide-react"
+import { Check, Clock3, MessageCircle, UserX, UsersRound } from "lucide-react"
 import { useState } from "react"
 import { useConvexAuth, useMutation, useQuery } from "convex/react"
 import { makeFunctionReference } from "convex/server"
@@ -239,7 +239,29 @@ export function FriendsList() {
               </Empty>
             ) : (
               data.friends.map((person) => (
-                <PersonRow key={person.username} person={person} />
+                <PersonRow
+                  actions={
+                    <>
+                      <Button
+                        render={<Link href={`/messages/${person.username}`} />}
+                        size="sm"
+                      >
+                        <MessageCircle />
+                        Message
+                      </Button>
+                      <Button
+                        render={<Link href={`/profile/${person.username}`} />}
+                        size="sm"
+                        variant="outline"
+                      >
+                        <UsersRound />
+                        View profile
+                      </Button>
+                    </>
+                  }
+                  key={person.username}
+                  person={person}
+                />
               ))
             )}
           </CardContent>

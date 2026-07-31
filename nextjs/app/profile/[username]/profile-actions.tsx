@@ -5,6 +5,7 @@ import {
   Check,
   Clock3,
   Copy,
+  MessageCircle,
   MoreHorizontal,
   Pencil,
   ShieldBan,
@@ -252,6 +253,10 @@ export function ProfileActions({
           </>
         ) : relationship === "friends" ? (
           <>
+            <Button render={<Link href={`/messages/${username}`} />}>
+              <MessageCircle />
+              Message
+            </Button>
             <Button disabled type="button" variant="secondary">
               <UserCheck />
               Friends
