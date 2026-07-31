@@ -1,8 +1,15 @@
 "use client"
 
-import { ExternalLink, Send, WalletCards } from "lucide-react"
+import {
+  ExternalLink,
+  LoaderCircle,
+  RefreshCw,
+  Send,
+  WalletCards,
+} from "lucide-react"
 import { format } from "date-fns"
 import { formatUnits } from "viem"
+import { useState } from "react"
 import { useConvexAuth, useQuery } from "convex/react"
 import { makeFunctionReference } from "convex/server"
 
@@ -22,6 +29,7 @@ import {
   ARC_TESTNET_EXPLORER,
   ARC_TESTNET_USDC_DECIMALS,
 } from "@/lib/arc-testnet"
+import { readCircleAuthorization } from "@/lib/circle-authorization"
 
 type PaymentDetails = {
   id: string
@@ -34,6 +42,7 @@ type PaymentDetails = {
   failureReason?: string
   destinationAddress: string
   sourceWalletAddress: string
+  sourceCustody: "circle" | "external"
   txHash?: string
   counterparty: {
     displayName: string
@@ -95,6 +104,60 @@ export function PaymentDetailDialog({
   const amount = payment
     ? formatUnits(BigInt(payment.amountBaseUnits), ARC_TESTNET_USDC_DECIMALS)
     : null
+  const [refreshing, setRefreshing] = useState(false)
+  const [refreshError, setRefreshError] = useState<string>()
+
+  async function refreshPaymentStatus() {
+    if (!payment?.txHash || payment.status !== "submitted" || refreshing) return
+    setRefreshing(true)
+    setRefreshError(undefined)
+    try {
+      const response =
+        payment.sourceCustody === "circle"
+          ? await (() => {
+              const authorization = readCircleAuthorization()
+              if (!authorization) {
+                throw new Error(
+                  "Your secure Circle session has ended. Please sign in again."
+                )
+              }
+              return fetch("/api/payments/circle/reconcile", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  paymentId: payment.id,
+                  userToken: authorization.userToken,
+                }),
+              })
+            })()
+          : await fetch("/api/payments/reconcile", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                paymentId: payment.id,
+                txHash: payment.txHash,
+              }),
+            })
+      const data = (await response.json().catch(() => ({}))) as {
+        error?: string
+        status?: string
+      }
+      if (!response.ok) {
+        throw new Error(data.error || "Could not refresh this payment")
+      }
+      if (data.status === "confirmed") {
+        window.dispatchEvent(new Event("coinarc:payment-confirmed"))
+      }
+    } catch (reason) {
+      setRefreshError(
+        reason instanceof Error
+          ? reason.message
+          : "Could not refresh this payment"
+      )
+    } finally {
+      setRefreshing(false)
+    }
+  }
 
   return (
     <Dialog onOpenChange={onOpenChange} open={paymentId !== null}>
@@ -201,9 +264,29 @@ export function PaymentDetailDialog({
                   {payment.failureReason}
                 </p>
               ) : null}
+              {refreshError ? (
+                <p className="rounded-2xl bg-destructive/10 p-4 text-sm text-destructive">
+                  {refreshError}
+                </p>
+              ) : null}
             </div>
 
             <DialogFooter>
+              {payment.status === "submitted" && payment.txHash ? (
+                <Button
+                  disabled={refreshing}
+                  onClick={() => void refreshPaymentStatus()}
+                  type="button"
+                  variant="outline"
+                >
+                  {refreshing ? (
+                    <LoaderCircle className="animate-spin" />
+                  ) : (
+                    <RefreshCw />
+                  )}
+                  Refresh status
+                </Button>
+              ) : null}
               {payment.txHash ? (
                 <Button
                   render={

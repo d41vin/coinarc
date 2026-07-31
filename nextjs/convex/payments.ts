@@ -1,4 +1,5 @@
 import { v } from "convex/values"
+import { paginationOptsValidator } from "convex/server"
 
 import { mutation, query } from "./_generated/server"
 import type { Id } from "./_generated/dataModel"
@@ -6,7 +7,6 @@ import type { MutationCtx, QueryCtx } from "./_generated/server"
 import { createPaymentReceivedNotification } from "./notifications"
 
 const ARC_TESTNET_CHAIN_ID = 5_042_002
-const MAX_HISTORY_ITEMS = 100
 const MAX_SEARCH_RESULTS = 8
 const MAX_NOTE_LENGTH = 280
 
@@ -204,16 +204,12 @@ async function isFriend(
   )
 }
 
-async function recipientForUsername(
+async function recipientForUserId(
   ctx: MutationCtx | QueryCtx,
   senderId: Id<"users">,
-  usernameInput: string
+  recipientId: Id<"users">
 ) {
-  const username = normalizeUsername(usernameInput)
-  const recipient = await ctx.db
-    .query("users")
-    .withIndex("by_username", (q) => q.eq("username", username))
-    .unique()
+  const recipient = await ctx.db.get(recipientId)
   if (
     !recipient ||
     !recipient.onboardingComplete ||
@@ -269,14 +265,24 @@ export const searchRecipients = query({
   args: { query: v.string() },
   handler: async (ctx, args) => {
     const { user: viewer } = await currentOnboardedUser(ctx)
-    const searchTerm = normalizeUsername(args.query)
+    const rawSearchTerm = args.query.trim()
+    const searchTerm = normalizeUsername(rawSearchTerm)
     if (searchTerm.length < 2 || searchTerm.length > 80) return []
 
-    const exactUsername = await ctx.db
-      .query("users")
-      .withIndex("by_username", (q) => q.eq("username", searchTerm))
-      .unique()
-    const [usernameMatches, displayNameMatches] = await Promise.all([
+    const walletSearchTerm = rawSearchTerm.toLowerCase()
+    const isWalletSearch = /^0x[a-f0-9]{4,40}$/i.test(rawSearchTerm)
+    const isExactWalletSearch = /^0x[a-f0-9]{40}$/i.test(rawSearchTerm)
+    const [
+      exactUsername,
+      usernameMatches,
+      displayNameMatches,
+      exactWallet,
+      walletMatches,
+    ] = await Promise.all([
+      ctx.db
+        .query("users")
+        .withIndex("by_username", (q) => q.eq("username", searchTerm))
+        .unique(),
       ctx.db
         .query("users")
         .withSearchIndex("search_username", (q) =>
@@ -289,7 +295,34 @@ export const searchRecipients = query({
           q.search("displayName", searchTerm).eq("onboardingComplete", true)
         )
         .take(MAX_SEARCH_RESULTS),
+      isExactWalletSearch
+        ? ctx.db
+            .query("wallets")
+            .withIndex("by_address", (q) => q.eq("address", walletSearchTerm))
+            .unique()
+        : Promise.resolve(null),
+      isWalletSearch
+        ? ctx.db
+            .query("wallets")
+            .withSearchIndex("search_address", (q) =>
+              q
+                .search("address", walletSearchTerm)
+                .eq("chainId", ARC_TESTNET_CHAIN_ID)
+                .eq("primaryReceiving", true)
+            )
+            .take(MAX_SEARCH_RESULTS)
+        : Promise.resolve([]),
     ])
+    const walletUsers = await Promise.all(
+      [
+        ...(exactWallet &&
+        exactWallet.chainId === ARC_TESTNET_CHAIN_ID &&
+        exactWallet.primaryReceiving
+          ? [exactWallet]
+          : []),
+        ...walletMatches,
+      ].map((wallet) => ctx.db.get(wallet.userId))
+    )
 
     const candidates = []
     const seen = new Set<Id<"users">>()
@@ -297,6 +330,7 @@ export const searchRecipients = query({
       exactUsername,
       ...usernameMatches,
       ...displayNameMatches,
+      ...walletUsers,
     ]) {
       if (
         !candidate ||
@@ -316,11 +350,12 @@ export const searchRecipients = query({
       candidates.map(async (candidate) => {
         if (await isBlocked(ctx, viewer._id, candidate._id)) return null
         const wallet = await primaryWalletFor(ctx, candidate._id)
-        if (!wallet) return null
         return {
+          userId: candidate._id,
           displayName: candidate.displayName!,
           username: candidate.username!,
           avatarUrl: candidate.avatarUrl,
+          walletAddress: wallet?.address,
           isFriend: await isFriend(ctx, viewer._id, candidate._id),
         }
       })
@@ -331,7 +366,12 @@ export const searchRecipients = query({
         (result): result is NonNullable<(typeof results)[number]> =>
           result !== null
       )
-      .sort((first, second) => Number(second.isFriend) - Number(first.isFriend))
+      .sort(
+        (first, second) =>
+          Number(Boolean(second.walletAddress)) -
+            Number(Boolean(first.walletAddress)) ||
+          Number(second.isFriend) - Number(first.isFriend)
+      )
       .slice(0, MAX_SEARCH_RESULTS)
   },
 })
@@ -339,7 +379,7 @@ export const searchRecipients = query({
 export const createDraft = mutation({
   args: {
     recipient: v.union(
-      v.object({ type: v.literal("coinarc"), username: v.string() }),
+      v.object({ type: v.literal("coinarc"), userId: v.id("users") }),
       v.object({ type: v.literal("address"), address: v.string() })
     ),
     amountBaseUnits: v.string(),
@@ -378,10 +418,10 @@ export const createDraft = mutation({
     let destinationAddress: string
     let note: string | undefined
     if (args.recipient.type === "coinarc") {
-      const resolved = await recipientForUsername(
+      const resolved = await recipientForUserId(
         ctx,
         sender._id,
-        args.recipient.username
+        args.recipient.userId
       )
       recipientUserId = resolved.recipient._id
       destinationAddress = resolved.wallet.address
@@ -568,40 +608,33 @@ export const fail = mutation({
 
 export const history = query({
   args: {
-    direction: v.union(
-      v.literal("all"),
-      v.literal("sent"),
-      v.literal("received")
-    ),
+    direction: v.union(v.literal("sent"), v.literal("received")),
+    paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
     const { user } = await currentOnboardedUser(ctx)
-    const [sent, received] = await Promise.all([
-      args.direction === "received"
-        ? Promise.resolve([])
-        : ctx.db
-            .query("payments")
-            .withIndex("by_sender_id_and_created_at", (q) =>
-              q.eq("senderId", user._id)
-            )
-            .order("desc")
-            .take(MAX_HISTORY_ITEMS),
-      args.direction === "sent"
-        ? Promise.resolve([])
-        : ctx.db
-            .query("payments")
-            .withIndex("by_recipient_id_and_created_at", (q) =>
-              q.eq("recipientUserId", user._id)
-            )
-            .order("desc")
-            .take(MAX_HISTORY_ITEMS),
-    ])
-    const records = [...sent, ...received]
-      .sort((first, second) => second.createdAt - first.createdAt)
-      .slice(0, MAX_HISTORY_ITEMS)
-    return await Promise.all(
-      records.map((payment) => paymentSummaryFor(ctx, payment, user._id))
-    )
+    const result = await (args.direction === "sent"
+      ? ctx.db
+          .query("payments")
+          .withIndex("by_sender_id_and_created_at", (q) =>
+            q.eq("senderId", user._id)
+          )
+          .filter((q) => q.neq(q.field("status"), "draft"))
+          .order("desc")
+          .paginate(args.paginationOpts)
+      : ctx.db
+          .query("payments")
+          .withIndex("by_recipient_id_and_status_and_created_at", (q) =>
+            q.eq("recipientUserId", user._id).eq("status", "confirmed")
+          )
+          .order("desc")
+          .paginate(args.paginationOpts))
+    return {
+      ...result,
+      page: await Promise.all(
+        result.page.map((payment) => paymentSummaryFor(ctx, payment, user._id))
+      ),
+    }
   },
 })
 
@@ -638,6 +671,7 @@ export const details = query({
       failureReason: payment.failureReason,
       destinationAddress: payment.destinationAddress,
       sourceWalletAddress: payment.sourceWalletAddress,
+      sourceCustody: payment.sourceCustody,
       txHash: payment.txHash,
       counterparty,
       note: isSent || payment.status === "confirmed" ? note?.body : undefined,

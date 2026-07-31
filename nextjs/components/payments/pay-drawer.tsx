@@ -3,7 +3,6 @@
 import { W3SSdk } from "@circle-fin/w3s-pw-web-sdk"
 import {
   ArrowLeft,
-  Check,
   ChevronRight,
   Clock3,
   LoaderCircle,
@@ -12,21 +11,19 @@ import {
   WalletCards,
 } from "lucide-react"
 import { useMemo, useState } from "react"
-import { useConvexAuth, useMutation, useQuery } from "convex/react"
-import { makeFunctionReference } from "convex/server"
+import { useConvexAuth, useMutation, usePaginatedQuery } from "convex/react"
+import { makeFunctionReference, type PaginationOptions } from "convex/server"
 import { formatDistanceToNow } from "date-fns"
-import {
-  formatUnits,
-  isAddress,
-  parseUnits,
-  type Address,
-  type Hash,
-} from "viem"
+import { formatUnits, parseUnits, type Address, type Hash } from "viem"
 import { useAccount, useChainId, useWriteContract } from "wagmi"
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import {
+  RecipientPicker,
+  type PaymentRecipient,
+} from "@/components/recipient-picker"
 import {
   Drawer,
   DrawerContent,
@@ -54,13 +51,6 @@ import {
 } from "@/lib/arc-testnet"
 import { readCircleAuthorization } from "@/lib/circle-authorization"
 
-type Recipient = {
-  displayName: string
-  username: string
-  avatarUrl?: string
-  isFriend: boolean
-}
-
 type DraftPayment = {
   paymentId: string
   sourceWalletAddress: string
@@ -85,17 +75,11 @@ type PaymentSummary = {
   } | null
 }
 
-const searchRecipients = makeFunctionReference<
-  "query",
-  { query: string },
-  Recipient[]
->("payments:searchRecipients")
 const createDraft = makeFunctionReference<
   "mutation",
   {
     recipient:
-      | { type: "coinarc"; username: string }
-      | { type: "address"; address: string }
+      { type: "coinarc"; userId: string } | { type: "address"; address: string }
     amountBaseUnits: string
     note?: string
     clientRequestId: string
@@ -104,8 +88,12 @@ const createDraft = makeFunctionReference<
 >("payments:createDraft")
 const listHistory = makeFunctionReference<
   "query",
-  { direction: "all" | "sent" | "received" },
-  PaymentSummary[]
+  { direction: "sent" | "received"; paginationOpts: PaginationOptions },
+  {
+    page: PaymentSummary[]
+    isDone: boolean
+    continueCursor: string
+  }
 >("payments:history")
 
 function initials(displayName: string) {
@@ -127,6 +115,10 @@ function amountToBaseUnits(amount: string) {
   if (!/^(?:0|[1-9]\d*)(?:\.\d{1,6})?$/.test(normalized)) return null
   const baseUnits = parseUnits(normalized, ARC_TESTNET_USDC_DECIMALS)
   return baseUnits > BigInt(0) ? baseUnits : null
+}
+
+function isIncompleteAmount(amount: string) {
+  return /^(?:0|[1-9]\d*)\.$/.test(amount.trim())
 }
 
 function statusLabel(status: string) {
@@ -178,8 +170,7 @@ export function PayDrawer({
   const [historyDirection, setHistoryDirection] = useState<
     "all" | "sent" | "received"
   >("all")
-  const [recipientInput, setRecipientInput] = useState("")
-  const [recipient, setRecipient] = useState<Recipient | null>(null)
+  const [recipient, setRecipient] = useState<PaymentRecipient | null>(null)
   const [amount, setAmount] = useState("")
   const [note, setNote] = useState("")
   const [reviewing, setReviewing] = useState(false)
@@ -189,25 +180,44 @@ export function PayDrawer({
   const [error, setError] = useState<string>()
   const [busy, setBusy] = useState(false)
 
-  const normalizedRecipientInput = recipientInput.trim()
-  const isWalletAddress = isAddress(normalizedRecipientInput, {
-    strict: false,
-  })
-  const recipientSearch = useQuery(
-    searchRecipients,
-    isAuthenticated &&
-      !recipient &&
-      !isWalletAddress &&
-      normalizedRecipientInput.length >= 2
-      ? { query: normalizedRecipientInput }
-      : "skip"
-  )
-  const history = useQuery(
+  const sentHistory = usePaginatedQuery(
     listHistory,
-    isAuthenticated ? { direction: historyDirection } : "skip"
+    isAuthenticated ? { direction: "sent" } : "skip",
+    { initialNumItems: 20 }
+  )
+  const receivedHistory = usePaginatedQuery(
+    listHistory,
+    isAuthenticated ? { direction: "received" } : "skip",
+    { initialNumItems: 20 }
   )
   const amountBaseUnits = useMemo(() => amountToBaseUnits(amount), [amount])
-  const recipientReady = Boolean(recipient || isWalletAddress)
+  const amountIsIncomplete = isIncompleteAmount(amount)
+  const history = useMemo(() => {
+    const records =
+      historyDirection === "sent"
+        ? sentHistory.results
+        : historyDirection === "received"
+          ? receivedHistory.results
+          : [...sentHistory.results, ...receivedHistory.results]
+    return [...records].sort(
+      (first, second) => second.createdAt - first.createdAt
+    )
+  }, [historyDirection, receivedHistory.results, sentHistory.results])
+  const historyLoading =
+    !isAuthenticated ||
+    (historyDirection !== "received" &&
+      sentHistory.status === "LoadingFirstPage") ||
+    (historyDirection !== "sent" &&
+      receivedHistory.status === "LoadingFirstPage")
+  const historyLoadingMore =
+    (historyDirection !== "received" && sentHistory.status === "LoadingMore") ||
+    (historyDirection !== "sent" && receivedHistory.status === "LoadingMore")
+  const canLoadMoreHistory =
+    (historyDirection !== "received" && sentHistory.status === "CanLoadMore") ||
+    (historyDirection !== "sent" && receivedHistory.status === "CanLoadMore")
+  const coinArcRecipient =
+    recipient?.type === "coinarc" ? recipient.recipient : null
+  const recipientReady = recipient !== null
   const canReview = recipientReady && amountBaseUnits !== null
 
   function resetDraft() {
@@ -217,15 +227,9 @@ export function PayDrawer({
     setError(undefined)
   }
 
-  function selectRecipient(nextRecipient: Recipient) {
+  function changeRecipient(nextRecipient: PaymentRecipient | null) {
     setRecipient(nextRecipient)
-    setRecipientInput(nextRecipient.displayName)
-    resetDraft()
-  }
-
-  function changeRecipientInput(nextInput: string) {
-    setRecipientInput(nextInput)
-    setRecipient(null)
+    setNote("")
     resetDraft()
   }
 
@@ -234,19 +238,36 @@ export function PayDrawer({
     resetDraft()
   }
 
+  function loadMoreHistory() {
+    if (
+      historyDirection !== "received" &&
+      sentHistory.status === "CanLoadMore"
+    ) {
+      sentHistory.loadMore(20)
+    }
+    if (
+      historyDirection !== "sent" &&
+      receivedHistory.status === "CanLoadMore"
+    ) {
+      receivedHistory.loadMore(20)
+    }
+  }
+
   async function draftPayment() {
     if (draft) return draft
-    if (!amountBaseUnits || !recipientReady) {
+    if (!amountBaseUnits || !recipient) {
       throw new Error("Choose a recipient and enter a valid amount")
     }
     const requestId = clientRequestId ?? crypto.randomUUID()
     setClientRequestId(requestId)
+    const requestedRecipient =
+      recipient.type === "coinarc"
+        ? { type: "coinarc" as const, userId: recipient.recipient.userId }
+        : { type: "address" as const, address: recipient.address }
     const created = await createPaymentDraft({
-      recipient: recipient
-        ? { type: "coinarc", username: recipient.username }
-        : { type: "address", address: normalizedRecipientInput },
+      recipient: requestedRecipient,
       amountBaseUnits: amountBaseUnits.toString(),
-      ...(recipient && note.trim() ? { note: note.trim() } : {}),
+      ...(coinArcRecipient && note.trim() ? { note: note.trim() } : {}),
       clientRequestId: requestId,
     })
     setDraft(created)
@@ -403,7 +424,7 @@ export function PayDrawer({
 
   return (
     <Drawer onOpenChange={handleDrawerOpenChange} open={open} showSwipeHandle>
-      <DrawerContent>
+      <DrawerContent className="md:[--drawer-content-width:36rem] md:data-[swipe-axis=y]:!right-auto md:data-[swipe-axis=y]:!left-1/2 md:data-[swipe-axis=y]:[--translate-x:-50%]">
         <DrawerHeader>
           <DrawerTitle>Pay</DrawerTitle>
           <DrawerDescription>
@@ -449,12 +470,15 @@ export function PayDrawer({
                     </p>
                     <div className="mt-5 flex items-center gap-3 border-t pt-4">
                       <Avatar>
-                        {recipient?.avatarUrl ? (
-                          <AvatarImage alt="" src={recipient.avatarUrl} />
+                        {coinArcRecipient?.avatarUrl ? (
+                          <AvatarImage
+                            alt=""
+                            src={coinArcRecipient.avatarUrl}
+                          />
                         ) : null}
                         <AvatarFallback className="bg-primary text-primary-foreground">
-                          {recipient ? (
-                            initials(recipient.displayName)
+                          {coinArcRecipient ? (
+                            initials(coinArcRecipient.displayName)
                           ) : (
                             <WalletCards />
                           )}
@@ -465,13 +489,15 @@ export function PayDrawer({
                           To
                         </span>
                         <span className="block truncate font-medium">
-                          {recipient?.displayName ??
-                            shortAddress(normalizedRecipientInput)}
+                          {coinArcRecipient?.displayName ??
+                            (recipient?.type === "address"
+                              ? shortAddress(recipient.address)
+                              : "")}
                         </span>
-                        {recipient ? (
+                        {coinArcRecipient ? (
                           <span className="flex items-center gap-1 text-sm text-muted-foreground">
-                            @{recipient.username}
-                            {recipient.isFriend ? (
+                            @{coinArcRecipient.username}
+                            {coinArcRecipient.isFriend ? (
                               <Badge variant="outline">Friend</Badge>
                             ) : null}
                           </span>
@@ -479,7 +505,7 @@ export function PayDrawer({
                       </span>
                     </div>
                   </div>
-                  {recipient && note.trim() ? (
+                  {coinArcRecipient && note.trim() ? (
                     <div className="rounded-2xl border p-4">
                       <p className="text-xs font-medium text-muted-foreground">
                         Private CoinArc note
@@ -499,87 +525,12 @@ export function PayDrawer({
                 <div className="space-y-5">
                   <div className="space-y-2">
                     <Label htmlFor="pay-recipient">To</Label>
-                    <Input
-                      autoComplete="off"
+                    <RecipientPicker
+                      disabled={busy}
                       id="pay-recipient"
-                      onChange={(event) =>
-                        changeRecipientInput(event.target.value)
-                      }
-                      placeholder="Name, @username, or wallet address"
-                      value={recipientInput}
+                      onChange={changeRecipient}
+                      value={recipient}
                     />
-                    {recipient ? (
-                      <div className="flex items-center gap-3 rounded-2xl border p-3">
-                        <Avatar>
-                          {recipient.avatarUrl ? (
-                            <AvatarImage alt="" src={recipient.avatarUrl} />
-                          ) : null}
-                          <AvatarFallback className="bg-primary text-primary-foreground">
-                            {initials(recipient.displayName)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate font-medium">
-                            {recipient.displayName}
-                          </span>
-                          <span className="flex items-center gap-1 text-sm text-muted-foreground">
-                            @{recipient.username}
-                            {recipient.isFriend ? (
-                              <Badge variant="outline">Friend</Badge>
-                            ) : null}
-                          </span>
-                        </span>
-                        <Check className="size-5 text-primary" />
-                      </div>
-                    ) : isWalletAddress ? (
-                      <div className="flex items-center gap-3 rounded-2xl border p-3 text-sm">
-                        <span className="flex size-9 items-center justify-center rounded-full bg-muted">
-                          <WalletCards className="size-4" />
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block font-medium">
-                            Wallet address
-                          </span>
-                          <span className="block truncate font-mono text-xs text-muted-foreground">
-                            {normalizedRecipientInput}
-                          </span>
-                        </span>
-                        <Check className="size-5 text-primary" />
-                      </div>
-                    ) : recipientSearch?.length ? (
-                      <div className="overflow-hidden rounded-2xl border">
-                        {recipientSearch.map((result) => (
-                          <Button
-                            className="h-auto w-full justify-start rounded-none px-3 py-3 text-left hover:bg-muted"
-                            key={result.username}
-                            onClick={() => selectRecipient(result)}
-                            type="button"
-                            variant="ghost"
-                          >
-                            <Avatar className="mr-3">
-                              {result.avatarUrl ? (
-                                <AvatarImage alt="" src={result.avatarUrl} />
-                              ) : null}
-                              <AvatarFallback className="bg-primary text-primary-foreground">
-                                {initials(result.displayName)}
-                              </AvatarFallback>
-                            </Avatar>
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate font-medium">
-                                {result.displayName}
-                              </span>
-                              <span className="flex items-center gap-1 text-sm text-muted-foreground">
-                                @{result.username}
-                                {result.isFriend ? (
-                                  <Badge variant="outline">Friend</Badge>
-                                ) : null}
-                              </span>
-                            </span>
-                            <ChevronRight className="size-4 text-muted-foreground" />
-                          </Button>
-                        ))}
-                      </div>
-                    ) : null}
                   </div>
 
                   <div className="space-y-2">
@@ -596,14 +547,14 @@ export function PayDrawer({
                         USDC
                       </span>
                     </div>
-                    {amount && !amountBaseUnits ? (
+                    {amount && !amountBaseUnits && !amountIsIncomplete ? (
                       <p className="text-xs text-destructive">
                         Enter a positive amount with up to 6 decimal places.
                       </p>
                     ) : null}
                   </div>
 
-                  {recipient ? (
+                  {coinArcRecipient ? (
                     <div className="space-y-2">
                       <Label htmlFor="pay-note">Private note (optional)</Label>
                       <Textarea
@@ -617,7 +568,7 @@ export function PayDrawer({
                         value={note}
                       />
                       <p className="text-xs text-muted-foreground">
-                        Visible only to you and @{recipient.username} in
+                        Visible only to you and @{coinArcRecipient.username} in
                         CoinArc. It is not written to Arc.
                       </p>
                     </div>
@@ -664,7 +615,7 @@ export function PayDrawer({
                 </TabsList>
               </Tabs>
               <div className="mt-4">
-                {history === undefined ? (
+                {historyLoading ? (
                   <p className="py-8 text-sm text-muted-foreground">
                     Loading payment history…
                   </p>
@@ -676,7 +627,8 @@ export function PayDrawer({
                       </EmptyMedia>
                       <EmptyTitle>No payments here yet</EmptyTitle>
                       <EmptyDescription>
-                        Sent and received CoinArc payments will appear here.
+                        Payments you send through CoinArc and confirmed payments
+                        from CoinArc members will appear here.
                       </EmptyDescription>
                     </EmptyHeader>
                   </Empty>
@@ -732,6 +684,20 @@ export function PayDrawer({
                     })}
                   </div>
                 )}
+                {canLoadMoreHistory || historyLoadingMore ? (
+                  <Button
+                    className="mt-4 w-full"
+                    disabled={historyLoadingMore}
+                    onClick={loadMoreHistory}
+                    type="button"
+                    variant="outline"
+                  >
+                    {historyLoadingMore ? (
+                      <LoaderCircle className="animate-spin" />
+                    ) : null}
+                    {historyLoadingMore ? "Loading payments…" : "Load more"}
+                  </Button>
+                ) : null}
               </div>
             </TabsContent>
           </Tabs>

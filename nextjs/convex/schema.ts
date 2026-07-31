@@ -38,7 +38,11 @@ export default defineSchema({
     primaryReceiving: v.boolean(),
   })
     .index("by_address", ["address"])
-    .index("by_user_id", ["userId"]),
+    .index("by_user_id", ["userId"])
+    .searchIndex("search_address", {
+      searchField: "address",
+      filterFields: ["chainId", "primaryReceiving"],
+    }),
   payments: defineTable({
     senderId: v.id("users"),
     recipientUserId: v.optional(v.id("users")),
@@ -71,6 +75,11 @@ export default defineSchema({
     ])
     .index("by_sender_id_and_created_at", ["senderId", "createdAt"])
     .index("by_recipient_id_and_created_at", ["recipientUserId", "createdAt"])
+    .index("by_recipient_id_and_status_and_created_at", [
+      "recipientUserId",
+      "status",
+      "createdAt",
+    ])
     .index("by_tx_hash", ["txHash"]),
   paymentNotes: defineTable({
     paymentId: v.id("payments"),
