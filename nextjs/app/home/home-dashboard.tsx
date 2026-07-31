@@ -22,6 +22,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { ActivityFeed } from "@/components/activity/activity-feed"
 import { PayDrawer } from "@/components/payments/pay-drawer"
 import { PaymentDetailDialog } from "@/components/payments/payment-detail-dialog"
+import { ReceiveDialog } from "@/components/payments/receive-dialog"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -408,7 +409,13 @@ function FriendsPanel({ data }: { data: FriendsData | undefined }) {
   )
 }
 
-export function HomeDashboard({ displayName }: { displayName: string }) {
+export function HomeDashboard({
+  displayName,
+  receivingAddress,
+}: {
+  displayName: string
+  receivingAddress?: string
+}) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { isAuthenticated } = useConvexAuth()
@@ -539,7 +546,11 @@ export function HomeDashboard({ displayName }: { displayName: string }) {
         onOpenChange={(open) => {
           if (!open) setActiveAction(null)
         }}
-        open={activeAction !== null && activeAction.id !== "pay"}
+        open={
+          activeAction !== null &&
+          activeAction.id !== "pay" &&
+          activeAction.id !== "receive"
+        }
         showSwipeHandle
       >
         <DrawerContent>
@@ -577,6 +588,13 @@ export function HomeDashboard({ displayName }: { displayName: string }) {
         }}
         onOpenPayment={openPayment}
         open={activeAction?.id === "pay"}
+      />
+      <ReceiveDialog
+        address={receivingAddress}
+        onOpenChange={(open) => {
+          if (!open) setActiveAction(null)
+        }}
+        open={activeAction?.id === "receive"}
       />
       <PaymentDetailDialog
         onOpenChange={closePaymentDetail}

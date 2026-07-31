@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation"
 
 import { getSession } from "@/lib/auth"
-import { sessionState } from "@/lib/convex-server"
+import { primaryWalletForSession, sessionState } from "@/lib/convex-server"
 import { HomeDashboard } from "./home-dashboard"
 
 export default async function HomePage() {
@@ -10,6 +10,7 @@ export default async function HomePage() {
   if (!session.onboardingComplete) redirect("/onboarding")
 
   let displayName = session.email?.split("@")[0] || "there"
+  let receivingAddress: string | undefined
 
   try {
     const profile = await sessionState(session)
@@ -20,5 +21,18 @@ export default async function HomePage() {
     console.error("Could not load the authenticated home profile", reason)
   }
 
-  return <HomeDashboard displayName={displayName} />
+  try {
+    receivingAddress = (await primaryWalletForSession(session))?.address
+  } catch (reason) {
+    // Receive remains available with a setup state if the wallet directory is
+    // temporarily unavailable.
+    console.error("Could not load the primary receiving wallet", reason)
+  }
+
+  return (
+    <HomeDashboard
+      displayName={displayName}
+      receivingAddress={receivingAddress}
+    />
+  )
 }
