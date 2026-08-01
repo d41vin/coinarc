@@ -5,6 +5,11 @@ import { mutation, query } from "./_generated/server"
 import type { Id } from "./_generated/dataModel"
 import type { MutationCtx, QueryCtx } from "./_generated/server"
 import { createPaymentReceivedNotification } from "./notifications"
+import {
+  completePaymentRequestFulfillment,
+  releasePaymentRequestFulfillment,
+  reservePaymentRequestForFulfillment,
+} from "./paymentRequests"
 
 const ARC_TESTNET_CHAIN_ID = 5_042_002
 const MAX_SEARCH_RESULTS = 8
@@ -384,6 +389,7 @@ export const createDraft = mutation({
     ),
     amountBaseUnits: v.string(),
     note: v.optional(v.string()),
+    paymentRequestId: v.optional(v.id("paymentRequests")),
     clientRequestId: v.string(),
   },
   handler: async (ctx, args) => {
@@ -434,6 +440,9 @@ export const createDraft = mutation({
         note = trimmedNote
       }
     } else {
+      if (args.paymentRequestId) {
+        throw new Error("Payment requests can only be paid to CoinArc friends")
+      }
       if (args.note?.trim()) {
         throw new Error(
           "Private notes are available only for CoinArc recipients"
@@ -457,8 +466,19 @@ export const createDraft = mutation({
       amountBaseUnits,
       clientRequestId: args.clientRequestId,
       status: "draft",
+      paymentRequestId: args.paymentRequestId,
       createdAt,
     })
+    if (args.paymentRequestId) {
+      await reservePaymentRequestForFulfillment(ctx, {
+        requestId: args.paymentRequestId,
+        paymentId,
+        payerId: sender._id,
+        requesterId: recipientUserId!,
+        amountBaseUnits,
+        destinationAddress,
+      })
+    }
     if (note && recipientUserId) {
       await ctx.db.insert("paymentNotes", {
         paymentId,
@@ -563,27 +583,36 @@ export const confirm = mutation({
       submittedAt: payment.submittedAt ?? confirmedAt,
       confirmedAt,
     })
-    await ctx.db.insert("activityItems", {
-      userId: payment.senderId,
-      actorId: payment.recipientUserId ?? payment.senderId,
-      type: "payment-sent",
-      source: { type: "payment", id: payment._id },
-      createdAt: confirmedAt,
-    })
-    if (payment.recipientUserId) {
+    const completedRequest = payment.paymentRequestId
+      ? await completePaymentRequestFulfillment(ctx, {
+          requestId: payment.paymentRequestId,
+          paymentId: payment._id,
+          completedAt: confirmedAt,
+        })
+      : false
+    if (!completedRequest) {
       await ctx.db.insert("activityItems", {
-        userId: payment.recipientUserId,
-        actorId: payment.senderId,
-        type: "payment-received",
+        userId: payment.senderId,
+        actorId: payment.recipientUserId ?? payment.senderId,
+        type: "payment-sent",
         source: { type: "payment", id: payment._id },
         createdAt: confirmedAt,
       })
-      await createPaymentReceivedNotification(ctx, {
-        recipientId: payment.recipientUserId,
-        actorId: payment.senderId,
-        paymentId: payment._id,
-        createdAt: confirmedAt,
-      })
+      if (payment.recipientUserId) {
+        await ctx.db.insert("activityItems", {
+          userId: payment.recipientUserId,
+          actorId: payment.senderId,
+          type: "payment-received",
+          source: { type: "payment", id: payment._id },
+          createdAt: confirmedAt,
+        })
+        await createPaymentReceivedNotification(ctx, {
+          recipientId: payment.recipientUserId,
+          actorId: payment.senderId,
+          paymentId: payment._id,
+          createdAt: confirmedAt,
+        })
+      }
     }
     return { confirmed: true }
   },
@@ -602,7 +631,32 @@ export const fail = mutation({
       failureReason: args.reason.slice(0, 240),
       failedAt: Date.now(),
     })
+    await releasePaymentRequestFulfillment(
+      ctx,
+      payment.paymentRequestId,
+      payment._id
+    )
     return null
+  },
+})
+
+export const cancelDraft = mutation({
+  args: { paymentId: v.id("payments") },
+  handler: async (ctx, args) => {
+    const { user } = await currentOnboardedUser(ctx)
+    const payment = await ctx.db.get(args.paymentId)
+    if (!payment || payment.senderId !== user._id) {
+      throw new Error("Payment not found")
+    }
+    if (payment.status !== "draft") return { cancelled: false }
+
+    await ctx.db.patch(payment._id, { status: "cancelled" })
+    await releasePaymentRequestFulfillment(
+      ctx,
+      payment.paymentRequestId,
+      payment._id
+    )
+    return { cancelled: true }
   },
 })
 

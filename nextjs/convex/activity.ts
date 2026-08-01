@@ -84,22 +84,43 @@ export const list = query({
 
     const hydrated = await Promise.all(
       activityItems.map(async (item) => {
-        const payment = await ctx.db.get(item.source.id)
-        if (!payment || payment.status !== "confirmed") return null
-        const isSent = item.type === "payment-sent"
-        const counterpartyId = isSent
-          ? payment.recipientUserId
-          : payment.senderId
+        if (item.source.type === "payment") {
+          const payment = await ctx.db.get(item.source.id)
+          if (!payment || payment.status !== "confirmed") return null
+          const isSent = item.type === "payment-sent"
+          const counterpartyId = isSent
+            ? payment.recipientUserId
+            : payment.senderId
+          return {
+            id: item._id,
+            sourceType: "payment" as const,
+            type: item.type,
+            paymentId: payment._id,
+            createdAt: item.createdAt,
+            amountBaseUnits: payment.amountBaseUnits,
+            destinationAddress: payment.destinationAddress,
+            counterparty: counterpartyId
+              ? await profileFor(ctx, counterpartyId)
+              : null,
+          }
+        }
+
+        const request = await ctx.db.get(item.source.id)
+        if (!request) return null
+        const counterpartyId =
+          item.type === "payment-request-sent" ||
+          item.type === "payment-request-declined" ||
+          item.type === "payment-request-completed"
+            ? request.recipientId
+            : request.requesterId
         return {
           id: item._id,
+          sourceType: "payment-request" as const,
           type: item.type,
-          paymentId: payment._id,
+          requestId: request._id,
           createdAt: item.createdAt,
-          amountBaseUnits: payment.amountBaseUnits,
-          destinationAddress: payment.destinationAddress,
-          counterparty: counterpartyId
-            ? await profileFor(ctx, counterpartyId)
-            : null,
+          amountBaseUnits: request.amountBaseUnits,
+          counterparty: await profileFor(ctx, counterpartyId),
         }
       })
     )

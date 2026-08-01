@@ -32,8 +32,13 @@ type Notification = {
     | "friend-request-accepted"
     | "friend-request-declined"
     | "payment-received"
+    | "payment-request-received"
+    | "payment-request-declined"
+    | "payment-request-completed"
   source:
-    { type: "friend-request"; id: string } | { type: "payment"; id: string }
+    | { type: "friend-request"; id: string }
+    | { type: "payment"; id: string }
+    | { type: "payment-request"; id: string }
   createdAt: number
   isRead: boolean
   actor: {
@@ -87,6 +92,12 @@ function notificationMessage(notification: Notification) {
       return "declined your friend request."
     case "payment-received":
       return "sent you a payment."
+    case "payment-request-received":
+      return "requested a payment from you."
+    case "payment-request-declined":
+      return "declined your payment request."
+    case "payment-request-completed":
+      return "paid your payment request."
   }
 }
 
@@ -179,7 +190,7 @@ function NotificationCenter() {
             </Button>
           </div>
           <SheetDescription>
-            Payment and friend activity appears here.
+            Payment, request, and friend activity appears here.
           </SheetDescription>
         </SheetHeader>
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
@@ -235,6 +246,18 @@ function NotificationCenter() {
                       }
                     )
                   }
+                  onOpenRequest={() =>
+                    void updateNotification(
+                      `request:${notification._id}`,
+                      async () => {
+                        if (!notification.isRead) {
+                          await markRead({ notificationId: notification._id })
+                        }
+                        setOpen(false)
+                        router.push(`/home?request=${notification.source.id}`)
+                      }
+                    )
+                  }
                 />
               ))}
             </div>
@@ -252,6 +275,7 @@ function NotificationRow({
   onDecline,
   onMarkRead,
   onOpenPayment,
+  onOpenRequest,
 }: {
   busy?: string
   notification: Notification
@@ -259,10 +283,16 @@ function NotificationRow({
   onDecline: () => void
   onMarkRead: () => void
   onOpenPayment: () => void
+  onOpenRequest: () => void
 }) {
   const actionKey = (action: string) => `${action}:${notification._id}`
   const isRequest = notification.type === "friend-request-received"
   const isPayment = notification.type === "payment-received"
+  const isPaymentRequest =
+    notification.type === "payment-request-received" ||
+    notification.type === "payment-request-declined" ||
+    notification.type === "payment-request-completed"
+  const isClickable = isPayment || isPaymentRequest
   const summary = (
     <div className="flex gap-3">
       <Avatar>
@@ -292,11 +322,11 @@ function NotificationRow({
         !notification.isRead && "bg-muted/50"
       )}
     >
-      {isPayment ? (
+      {isClickable ? (
         <Button
           className="h-auto w-full justify-start p-0 text-left hover:bg-transparent"
           disabled={busy !== undefined}
-          onClick={onOpenPayment}
+          onClick={isPayment ? onOpenPayment : onOpenRequest}
           type="button"
           variant="ghost"
         >
@@ -329,7 +359,7 @@ function NotificationRow({
             </Button>
           </>
         ) : null}
-        {!notification.isRead && !isPayment ? (
+        {!notification.isRead && !isClickable ? (
           <Button
             disabled={busy !== undefined}
             onClick={onMarkRead}

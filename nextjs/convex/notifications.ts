@@ -22,6 +22,9 @@ type NotificationType =
   | "friend-request-accepted"
   | "friend-request-declined"
   | "payment-received"
+  | "payment-request-received"
+  | "payment-request-declined"
+  | "payment-request-completed"
 
 type NotificationActor = {
   avatarUrl?: string
@@ -208,9 +211,54 @@ export async function createPaymentReceivedNotification(
   await retainNewestNotifications(ctx, recipientId)
 }
 
+export async function createPaymentRequestNotification(
+  ctx: MutationCtx,
+  {
+    recipientId,
+    actorId,
+    requestId,
+    type,
+    createdAt,
+  }: {
+    recipientId: Id<"users">
+    actorId: Id<"users">
+    requestId: Id<"paymentRequests">
+    type:
+      | "payment-request-received"
+      | "payment-request-declined"
+      | "payment-request-completed"
+    createdAt: number
+  }
+) {
+  await ctx.db.insert("notifications", {
+    recipientId,
+    actorId,
+    type,
+    source: { type: "payment-request", id: requestId },
+    createdAt,
+    isRead: false,
+  })
+  await changeUnreadCount(ctx, recipientId, 1)
+  await retainNewestNotifications(ctx, recipientId)
+}
+
 export async function deleteNotificationsForFriendRequest(
   ctx: MutationCtx,
   requestId: Id<"friendRequests">
+) {
+  const notifications = await ctx.db
+    .query("notifications")
+    .withIndex("by_source_id", (q) => q.eq("source.id", requestId))
+    .take(MAX_NOTIFICATIONS_PER_SOURCE)
+
+  for (const notification of notifications) {
+    await deleteNotification(ctx, notification)
+  }
+}
+
+export async function deleteNotificationsForPaymentRequest(
+  ctx: MutationCtx,
+  requestId: Id<"paymentRequests">
 ) {
   const notifications = await ctx.db
     .query("notifications")

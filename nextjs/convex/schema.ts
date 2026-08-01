@@ -64,6 +64,7 @@ export default defineSchema({
     circleTransactionId: v.optional(v.string()),
     txHash: v.optional(v.string()),
     failureReason: v.optional(v.string()),
+    paymentRequestId: v.optional(v.id("paymentRequests")),
     createdAt: v.number(),
     submittedAt: v.optional(v.number()),
     confirmedAt: v.optional(v.number()),
@@ -85,7 +86,8 @@ export default defineSchema({
       "status",
       "createdAt",
     ])
-    .index("by_tx_hash", ["txHash"]),
+    .index("by_tx_hash", ["txHash"])
+    .index("by_payment_request_id", ["paymentRequestId"]),
   paymentNotes: defineTable({
     paymentId: v.id("payments"),
     senderId: v.id("users"),
@@ -93,11 +95,62 @@ export default defineSchema({
     body: v.string(),
     createdAt: v.number(),
   }).index("by_payment_id", ["paymentId"]),
+  paymentRequests: defineTable({
+    requesterId: v.id("users"),
+    recipientId: v.id("users"),
+    requesterWalletAddress: v.string(),
+    amountBaseUnits: v.string(),
+    note: v.optional(v.string()),
+    clientRequestId: v.string(),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("payment-processing"),
+      v.literal("completed"),
+      v.literal("declined"),
+      v.literal("cancelled"),
+      v.literal("expired")
+    ),
+    isOpen: v.boolean(),
+    expiresAt: v.number(),
+    createdAt: v.number(),
+    paymentStartedAt: v.optional(v.number()),
+    fulfillmentPaymentId: v.optional(v.id("payments")),
+    completedAt: v.optional(v.number()),
+    declinedAt: v.optional(v.number()),
+    cancelledAt: v.optional(v.number()),
+    expiredAt: v.optional(v.number()),
+  })
+    .index("by_requester_id_and_client_request_id", [
+      "requesterId",
+      "clientRequestId",
+    ])
+    .index("by_requester_id_and_created_at", ["requesterId", "createdAt"])
+    .index("by_recipient_id_and_created_at", ["recipientId", "createdAt"])
+    .index("by_requester_id_and_recipient_id_and_is_open", [
+      "requesterId",
+      "recipientId",
+      "isOpen",
+    ])
+    .index("by_fulfillment_payment_id", ["fulfillmentPaymentId"]),
   activityItems: defineTable({
     userId: v.id("users"),
     actorId: v.id("users"),
-    type: v.union(v.literal("payment-sent"), v.literal("payment-received")),
-    source: v.object({ type: v.literal("payment"), id: v.id("payments") }),
+    type: v.union(
+      v.literal("payment-sent"),
+      v.literal("payment-received"),
+      v.literal("payment-request-sent"),
+      v.literal("payment-request-received"),
+      v.literal("payment-request-declined"),
+      v.literal("payment-request-paid"),
+      v.literal("payment-request-completed")
+    ),
+    source: v.union(
+      v.object({ type: v.literal("payment"), id: v.id("payments") }),
+      v.object({
+        type: v.literal("payment-request"),
+        id: v.id("paymentRequests"),
+      })
+    ),
     createdAt: v.number(),
   }).index("by_user_id_and_created_at", ["userId", "createdAt"]),
   homePreferences: defineTable({
@@ -191,14 +244,21 @@ export default defineSchema({
       v.literal("friend-request-received"),
       v.literal("friend-request-accepted"),
       v.literal("friend-request-declined"),
-      v.literal("payment-received")
+      v.literal("payment-received"),
+      v.literal("payment-request-received"),
+      v.literal("payment-request-declined"),
+      v.literal("payment-request-completed")
     ),
     source: v.union(
       v.object({
         type: v.literal("friend-request"),
         id: v.id("friendRequests"),
       }),
-      v.object({ type: v.literal("payment"), id: v.id("payments") })
+      v.object({ type: v.literal("payment"), id: v.id("payments") }),
+      v.object({
+        type: v.literal("payment-request"),
+        id: v.id("paymentRequests"),
+      })
     ),
     createdAt: v.number(),
     isRead: v.boolean(),

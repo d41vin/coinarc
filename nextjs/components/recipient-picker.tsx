@@ -38,6 +38,11 @@ const searchRecipients = makeFunctionReference<
   { query: string },
   CoinArcRecipient[]
 >("payments:searchRecipients")
+const searchFriends = makeFunctionReference<
+  "query",
+  { query: string },
+  CoinArcRecipient[]
+>("paymentRequests:searchFriends")
 
 function initials(displayName: string) {
   return displayName
@@ -141,11 +146,13 @@ function SelectedRecipient({
 
 export function RecipientPicker({
   disabled = false,
+  friendsOnly = false,
   id,
   onChange,
   value,
 }: {
   disabled?: boolean
+  friendsOnly?: boolean
   id: string
   onChange: (recipient: PaymentRecipient | null) => void
   value: PaymentRecipient | null
@@ -154,21 +161,22 @@ export function RecipientPicker({
   const [inputValue, setInputValue] = useState("")
   const [open, setOpen] = useState(false)
   const normalizedInput = inputValue.trim()
-  const isWalletAddress = isAddress(normalizedInput, { strict: false })
+  const isWalletAddress =
+    !friendsOnly && isAddress(normalizedInput, { strict: false })
   const recipientSearch = useQuery(
-    searchRecipients,
+    friendsOnly ? searchFriends : searchRecipients,
     isAuthenticated && !value && normalizedInput.length >= 2
       ? { query: normalizedInput }
       : "skip"
   )
 
   const matchingRecipients = recipientSearch ?? []
-  const availableRecipients = matchingRecipients.filter(
-    (recipient) => recipient.walletAddress
-  )
-  const unavailableRecipients = matchingRecipients.filter(
-    (recipient) => !recipient.walletAddress
-  )
+  const availableRecipients = friendsOnly
+    ? matchingRecipients
+    : matchingRecipients.filter((recipient) => recipient.walletAddress)
+  const unavailableRecipients = friendsOnly
+    ? []
+    : matchingRecipients.filter((recipient) => !recipient.walletAddress)
   const options = useMemo<RecipientOption[]>(() => {
     const memberOptions = availableRecipients.map((recipient) => ({
       kind: "coinarc" as const,
@@ -239,11 +247,17 @@ export function RecipientPicker({
         aria-describedby={`${id}-help`}
         autoComplete="off"
         id={id}
-        placeholder="Name, @username, or wallet address"
+        placeholder={
+          friendsOnly
+            ? "Friend name or @username"
+            : "Name, @username, or wallet address"
+        }
         showTrigger={false}
       />
       <p className="sr-only" id={`${id}-help`}>
-        Search CoinArc members by name, username, or wallet address.
+        {friendsOnly
+          ? "Search your CoinArc friends by name or username."
+          : "Search CoinArc members by name, username, or wallet address."}
       </p>
       {panelOpen ? (
         <div

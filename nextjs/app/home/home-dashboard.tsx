@@ -22,6 +22,10 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { ActivityFeed } from "@/components/activity/activity-feed"
 import { PayDrawer } from "@/components/payments/pay-drawer"
 import { PaymentDetailDialog } from "@/components/payments/payment-detail-dialog"
+import {
+  RequestDrawer,
+  type RequestFulfillment,
+} from "@/components/payments/request-drawer"
 import { ReceiveDialog } from "@/components/payments/receive-dialog"
 import { Button } from "@/components/ui/button"
 import {
@@ -431,6 +435,12 @@ export function HomeDashboard({
   const [pinError, setPinError] = useState<string>()
   const pinnedActionIds = new Set(savedPinnedActions ?? [])
   const selectedPaymentId = searchParams.get("payment")
+  const selectedRequestId = searchParams.get("request")
+  const [requestFulfillment, setRequestFulfillment] =
+    useState<RequestFulfillment | null>(null)
+  const requestAction = additionalActions.find(
+    (action) => action.id === "request-payment"
+  )!
 
   function openPayment(paymentId: string) {
     const next = new URLSearchParams(searchParams.toString())
@@ -444,6 +454,25 @@ export function HomeDashboard({
     next.delete("payment")
     const query = next.toString()
     router.replace(query ? `/home?${query}` : "/home")
+  }
+
+  function openRequest(requestId: string) {
+    const next = new URLSearchParams(searchParams.toString())
+    next.set("request", requestId)
+    router.push(`/home?${next.toString()}`)
+  }
+
+  function closeRequestDetail() {
+    const next = new URLSearchParams(searchParams.toString())
+    next.delete("request")
+    const query = next.toString()
+    router.replace(query ? `/home?${query}` : "/home")
+  }
+
+  function returnToRequestDetails() {
+    const requestId = requestFulfillment?.requestId
+    setRequestFulfillment(null)
+    if (requestId) openRequest(requestId)
   }
 
   async function togglePinned(actionId: AdditionalActionId) {
@@ -532,7 +561,10 @@ export function HomeDashboard({
                 <TabsTrigger value="friends">Friends</TabsTrigger>
               </TabsList>
               <TabsContent className="pt-4" value="activity">
-                <ActivityFeed onOpenPayment={openPayment} />
+                <ActivityFeed
+                  onOpenPayment={openPayment}
+                  onOpenRequest={openRequest}
+                />
               </TabsContent>
               <TabsContent className="pt-4" value="friends">
                 <FriendsPanel data={friends} />
@@ -549,7 +581,8 @@ export function HomeDashboard({
         open={
           activeAction !== null &&
           activeAction.id !== "pay" &&
-          activeAction.id !== "receive"
+          activeAction.id !== "receive" &&
+          activeAction.id !== "request-payment"
         }
         showSwipeHandle
       >
@@ -583,11 +616,35 @@ export function HomeDashboard({
         </DrawerContent>
       </Drawer>
       <PayDrawer
+        key={requestFulfillment?.requestId ?? "pay"}
         onOpenChange={(open) => {
-          if (!open) setActiveAction(null)
+          if (!open) {
+            setRequestFulfillment(null)
+            setActiveAction(null)
+          }
         }}
         onOpenPayment={openPayment}
-        open={activeAction?.id === "pay"}
+        onReturnToRequest={returnToRequestDetails}
+        open={activeAction?.id === "pay" || requestFulfillment !== null}
+        requestFulfillment={requestFulfillment}
+      />
+      <RequestDrawer
+        onBackToHistory={() => {
+          setActiveAction(requestAction)
+          closeRequestDetail()
+        }}
+        onOpenChange={(open) => {
+          if (!open) {
+            setActiveAction(null)
+            closeRequestDetail()
+          }
+        }}
+        onPayRequest={(request) => setRequestFulfillment(request)}
+        open={
+          requestFulfillment === null &&
+          (activeAction?.id === "request-payment" || selectedRequestId !== null)
+        }
+        requestId={selectedRequestId}
       />
       <ReceiveDialog
         address={receivingAddress}

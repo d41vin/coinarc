@@ -27,6 +27,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   RecipientPicker,
+  type CoinArcRecipient,
   type PaymentRecipient,
 } from "@/components/recipient-picker"
 import {
@@ -108,6 +109,7 @@ const createDraft = makeFunctionReference<
       { type: "coinarc"; userId: string } | { type: "address"; address: string }
     amountBaseUnits: string
     note?: string
+    paymentRequestId?: string
     clientRequestId: string
   },
   DraftPayment
@@ -126,6 +128,11 @@ const listPendingReconciliations = makeFunctionReference<
   Record<string, never>,
   PendingReconciliation[]
 >("payments:pendingReconciliation")
+const cancelDraft = makeFunctionReference<
+  "mutation",
+  { paymentId: string },
+  { cancelled: boolean }
+>("payments:cancelDraft")
 
 function initials(displayName: string) {
   return displayName
@@ -190,25 +197,45 @@ function pause(milliseconds: number) {
 export function PayDrawer({
   onOpenChange,
   onOpenPayment,
+  onReturnToRequest,
   open,
+  requestFulfillment,
 }: {
   onOpenChange: (open: boolean) => void
   onOpenPayment: (paymentId: string) => void
+  onReturnToRequest?: () => void
   open: boolean
+  requestFulfillment?: {
+    requestId: string
+    recipient: CoinArcRecipient
+    amountBaseUnits: string
+  } | null
 }) {
   const { address: connectedAddress } = useAccount()
   const chainId = useChainId()
   const { isAuthenticated } = useConvexAuth()
   const { writeContractAsync } = useWriteContract()
   const createPaymentDraft = useMutation(createDraft)
+  const cancelPaymentDraft = useMutation(cancelDraft)
   const [tab, setTab] = useState<"send" | "history">("send")
   const [historyDirection, setHistoryDirection] = useState<
     "all" | "sent" | "received"
   >("all")
-  const [recipient, setRecipient] = useState<PaymentRecipient | null>(null)
-  const [amount, setAmount] = useState("")
+  const [recipient, setRecipient] = useState<PaymentRecipient | null>(() =>
+    requestFulfillment
+      ? { type: "coinarc", recipient: requestFulfillment.recipient }
+      : null
+  )
+  const [amount, setAmount] = useState(() =>
+    requestFulfillment
+      ? formatUnits(
+          BigInt(requestFulfillment.amountBaseUnits),
+          ARC_TESTNET_USDC_DECIMALS
+        )
+      : ""
+  )
   const [note, setNote] = useState("")
-  const [reviewing, setReviewing] = useState(false)
+  const [reviewing, setReviewing] = useState(Boolean(requestFulfillment))
   const [draft, setDraft] = useState<DraftPayment | null>(null)
   const [clientRequestId, setClientRequestId] = useState<string>()
   const [status, setStatus] = useState<string>()
@@ -217,6 +244,7 @@ export function PayDrawer({
   const [walletBalance, setWalletBalance] = useState<WalletBalance>()
   const [spendableBalance, setSpendableBalance] = useState<SpendableBalance>()
   const [reconciliationAttempt, setReconciliationAttempt] = useState(0)
+  const isRequestFulfillment = Boolean(requestFulfillment)
 
   const sentHistory = usePaginatedQuery(
     listHistory,
@@ -468,6 +496,9 @@ export function PayDrawer({
       recipient: requestedRecipient,
       amountBaseUnits: amountBaseUnits.toString(),
       ...(coinArcRecipient && note.trim() ? { note: note.trim() } : {}),
+      ...(requestFulfillment
+        ? { paymentRequestId: requestFulfillment.requestId }
+        : {}),
       clientRequestId: requestId,
     })
     setDraft(created)
@@ -570,22 +601,40 @@ export function PayDrawer({
     if (busy || hasPendingPayment) return
     setBusy(true)
     setError(undefined)
+    let payment: DraftPayment | undefined
     try {
-      const payment = await draftPayment()
+      payment = await draftPayment()
       const confirmed =
         payment.sourceCustody === "circle"
           ? await executeCirclePayment(payment)
           : await executeExternalPayment(payment)
       if (confirmed) {
         setStatus("Payment confirmed on Arc Testnet.")
-        setTab("history")
         window.dispatchEvent(new Event("coinarc:payment-confirmed"))
+        if (isRequestFulfillment) {
+          onReturnToRequest?.()
+        } else {
+          setTab("history")
+        }
       } else {
         setStatus(
           "Payment is still confirming on Arc Testnet. It will appear in history only after confirmation."
         )
       }
     } catch (reason) {
+      if (isRequestFulfillment && payment) {
+        try {
+          const cancelled = await cancelPaymentDraft({
+            paymentId: payment.paymentId,
+          })
+          if (cancelled.cancelled) {
+            setDraft(null)
+            setClientRequestId(undefined)
+          }
+        } catch {
+          // A submitted payment must remain linked while it is reconciled.
+        }
+      }
       setStatus(undefined)
       setError(
         reason instanceof Error
@@ -614,6 +663,10 @@ export function PayDrawer({
   }
 
   function handleDrawerOpenChange(nextOpen: boolean) {
+    if (!nextOpen && isRequestFulfillment && !busy) {
+      onReturnToRequest?.()
+      return
+    }
     if (!nextOpen) {
       setReviewing(false)
       setStatus(undefined)
@@ -626,9 +679,13 @@ export function PayDrawer({
     <Drawer onOpenChange={handleDrawerOpenChange} open={open} showSwipeHandle>
       <DrawerContent className="md:!mx-auto md:[--drawer-content-width:39rem]">
         <DrawerHeader>
-          <DrawerTitle>Pay</DrawerTitle>
+          <DrawerTitle>
+            {isRequestFulfillment ? "Pay request" : "Pay"}
+          </DrawerTitle>
           <DrawerDescription>
-            Send USDC on Arc Testnet to a CoinArc member or wallet address.
+            {isRequestFulfillment
+              ? "Pay this exact CoinArc payment request with USDC on Arc Testnet."
+              : "Send USDC on Arc Testnet to a CoinArc member or wallet address."}
           </DrawerDescription>
         </DrawerHeader>
 
@@ -637,10 +694,12 @@ export function PayDrawer({
             onValueChange={(value) => setTab(value as "send" | "history")}
             value={tab}
           >
-            <TabsList className="w-full">
-              <TabsTrigger value="send">Send</TabsTrigger>
-              <TabsTrigger value="history">History</TabsTrigger>
-            </TabsList>
+            {!isRequestFulfillment ? (
+              <TabsList className="w-full">
+                <TabsTrigger value="send">Send</TabsTrigger>
+                <TabsTrigger value="history">History</TabsTrigger>
+              </TabsList>
+            ) : null}
 
             <TabsContent className="pt-5" value="send">
               {reviewing ? (
@@ -648,12 +707,15 @@ export function PayDrawer({
                   <Button
                     className="-ml-3"
                     disabled={busy}
-                    onClick={() => setReviewing(false)}
+                    onClick={() => {
+                      if (isRequestFulfillment) onReturnToRequest?.()
+                      else setReviewing(false)
+                    }}
                     type="button"
                     variant="ghost"
                   >
                     <ArrowLeft />
-                    Edit payment
+                    {isRequestFulfillment ? "Back to request" : "Edit payment"}
                   </Button>
                   <div className="rounded-3xl border bg-muted/40 p-5">
                     <p className="text-sm text-muted-foreground">
@@ -840,105 +902,109 @@ export function PayDrawer({
               ) : null}
             </TabsContent>
 
-            <TabsContent className="pt-5" value="history">
-              <Tabs
-                onValueChange={(value) =>
-                  setHistoryDirection(value as "all" | "sent" | "received")
-                }
-                value={historyDirection}
-              >
-                <TabsList>
-                  <TabsTrigger value="all">All</TabsTrigger>
-                  <TabsTrigger value="sent">Sent</TabsTrigger>
-                  <TabsTrigger value="received">Received</TabsTrigger>
-                </TabsList>
-              </Tabs>
-              <div className="mt-4">
-                {historyLoading ? (
-                  <p className="py-8 text-sm text-muted-foreground">
-                    Loading payment history…
-                  </p>
-                ) : history.length === 0 ? (
-                  <Empty className="min-h-56 border-dashed">
-                    <EmptyHeader>
-                      <EmptyMedia variant="icon">
-                        <Clock3 />
-                      </EmptyMedia>
-                      <EmptyTitle>No payments here yet</EmptyTitle>
-                      <EmptyDescription>
-                        Payments you send through CoinArc and confirmed payments
-                        from CoinArc members will appear here.
-                      </EmptyDescription>
-                    </EmptyHeader>
-                  </Empty>
-                ) : (
-                  <div className="divide-y overflow-hidden rounded-3xl border">
-                    {history.map((payment) => {
-                      const isSent = payment.direction === "sent"
-                      const name =
-                        payment.counterparty?.displayName ??
-                        shortAddress(payment.destinationAddress)
-                      return (
-                        <Button
-                          className="h-auto w-full justify-start rounded-none px-4 py-3 text-left hover:bg-muted"
-                          key={payment.id}
-                          onClick={() => onOpenPayment(payment.id)}
-                          type="button"
-                          variant="ghost"
-                        >
-                          <span
-                            className={`flex size-10 shrink-0 items-center justify-center rounded-full ${
-                              isSent
-                                ? "bg-muted"
-                                : "bg-primary text-primary-foreground"
-                            }`}
+            {!isRequestFulfillment ? (
+              <TabsContent className="pt-5" value="history">
+                <Tabs
+                  onValueChange={(value) =>
+                    setHistoryDirection(value as "all" | "sent" | "received")
+                  }
+                  value={historyDirection}
+                >
+                  <TabsList>
+                    <TabsTrigger value="all">All</TabsTrigger>
+                    <TabsTrigger value="sent">Sent</TabsTrigger>
+                    <TabsTrigger value="received">Received</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+                <div className="mt-4">
+                  {historyLoading ? (
+                    <p className="py-8 text-sm text-muted-foreground">
+                      Loading payment history…
+                    </p>
+                  ) : history.length === 0 ? (
+                    <Empty className="min-h-56 border-dashed">
+                      <EmptyHeader>
+                        <EmptyMedia variant="icon">
+                          <Clock3 />
+                        </EmptyMedia>
+                        <EmptyTitle>No payments here yet</EmptyTitle>
+                        <EmptyDescription>
+                          Payments you send through CoinArc and confirmed
+                          payments from CoinArc members will appear here.
+                        </EmptyDescription>
+                      </EmptyHeader>
+                    </Empty>
+                  ) : (
+                    <div className="divide-y overflow-hidden rounded-3xl border">
+                      {history.map((payment) => {
+                        const isSent = payment.direction === "sent"
+                        const name =
+                          payment.counterparty?.displayName ??
+                          shortAddress(payment.destinationAddress)
+                        return (
+                          <Button
+                            className="h-auto w-full justify-start rounded-none px-4 py-3 text-left hover:bg-muted"
+                            key={payment.id}
+                            onClick={() => onOpenPayment(payment.id)}
+                            type="button"
+                            variant="ghost"
                           >
-                            {isSent ? (
-                              <Send className="size-4" />
-                            ) : (
-                              <UserRound className="size-4" />
-                            )}
-                          </span>
-                          <span className="ml-3 min-w-0 flex-1">
-                            <span className="block truncate font-medium">
-                              {isSent ? `You paid ${name}` : `${name} paid you`}
-                            </span>
-                            <span className="block text-sm text-muted-foreground">
-                              {statusLabel(payment.status)} ·{" "}
-                              {formatDistanceToNow(
-                                new Date(payment.createdAt),
-                                { addSuffix: true }
+                            <span
+                              className={`flex size-10 shrink-0 items-center justify-center rounded-full ${
+                                isSent
+                                  ? "bg-muted"
+                                  : "bg-primary text-primary-foreground"
+                              }`}
+                            >
+                              {isSent ? (
+                                <Send className="size-4" />
+                              ) : (
+                                <UserRound className="size-4" />
                               )}
                             </span>
-                          </span>
-                          <span className="ml-3 text-right font-medium tabular-nums">
-                            {isSent ? "−" : "+"}
-                            {formatUnits(
-                              BigInt(payment.amountBaseUnits),
-                              ARC_TESTNET_USDC_DECIMALS
-                            )}
-                          </span>
-                        </Button>
-                      )
-                    })}
-                  </div>
-                )}
-                {canLoadMoreHistory || historyLoadingMore ? (
-                  <Button
-                    className="mt-4 w-full"
-                    disabled={historyLoadingMore}
-                    onClick={loadMoreHistory}
-                    type="button"
-                    variant="outline"
-                  >
-                    {historyLoadingMore ? (
-                      <LoaderCircle className="animate-spin" />
-                    ) : null}
-                    {historyLoadingMore ? "Loading payments…" : "Load more"}
-                  </Button>
-                ) : null}
-              </div>
-            </TabsContent>
+                            <span className="ml-3 min-w-0 flex-1">
+                              <span className="block truncate font-medium">
+                                {isSent
+                                  ? `You paid ${name}`
+                                  : `${name} paid you`}
+                              </span>
+                              <span className="block text-sm text-muted-foreground">
+                                {statusLabel(payment.status)} ·{" "}
+                                {formatDistanceToNow(
+                                  new Date(payment.createdAt),
+                                  { addSuffix: true }
+                                )}
+                              </span>
+                            </span>
+                            <span className="ml-3 text-right font-medium tabular-nums">
+                              {isSent ? "−" : "+"}
+                              {formatUnits(
+                                BigInt(payment.amountBaseUnits),
+                                ARC_TESTNET_USDC_DECIMALS
+                              )}
+                            </span>
+                          </Button>
+                        )
+                      })}
+                    </div>
+                  )}
+                  {canLoadMoreHistory || historyLoadingMore ? (
+                    <Button
+                      className="mt-4 w-full"
+                      disabled={historyLoadingMore}
+                      onClick={loadMoreHistory}
+                      type="button"
+                      variant="outline"
+                    >
+                      {historyLoadingMore ? (
+                        <LoaderCircle className="animate-spin" />
+                      ) : null}
+                      {historyLoadingMore ? "Loading payments…" : "Load more"}
+                    </Button>
+                  ) : null}
+                </div>
+              </TabsContent>
+            ) : null}
           </Tabs>
         </div>
 
@@ -955,7 +1021,9 @@ export function PayDrawer({
                   ? "Sending payment…"
                   : hasPendingPayment
                     ? "Confirming payment…"
-                    : "Send USDC"}
+                    : isRequestFulfillment
+                      ? "Pay request"
+                      : "Send USDC"}
               </Button>
             ) : (
               <Button
@@ -974,7 +1042,7 @@ export function PayDrawer({
             type="button"
             variant="outline"
           >
-            Close
+            {isRequestFulfillment ? "Back to request" : "Close"}
           </Button>
         </DrawerFooter>
       </DrawerContent>
