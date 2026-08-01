@@ -15,6 +15,7 @@ export async function GET() {
   if (!session) {
     return NextResponse.json({
       amount: null,
+      baseUnits: null,
       balanceAvailable: false,
       walletAvailable: false,
     })
@@ -28,6 +29,7 @@ export async function GET() {
     } catch {
       return NextResponse.json({
         amount: null,
+        baseUnits: null,
         balanceAvailable: false,
         walletAvailable: false,
       })
@@ -37,6 +39,7 @@ export async function GET() {
   if (!address) {
     return NextResponse.json({
       amount: null,
+      baseUnits: null,
       balanceAvailable: false,
       walletAvailable: false,
     })
@@ -54,12 +57,14 @@ export async function GET() {
 
     return NextResponse.json({
       amount: formatUnits(balance, ARC_TESTNET_USDC_DECIMALS),
+      baseUnits: balance.toString(),
       balanceAvailable: true,
       walletAvailable: true,
     })
   } catch {
     return NextResponse.json({
       amount: null,
+      baseUnits: null,
       balanceAvailable: false,
       walletAvailable: true,
     })

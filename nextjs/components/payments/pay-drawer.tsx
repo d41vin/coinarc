@@ -10,8 +10,13 @@ import {
   UserRound,
   WalletCards,
 } from "lucide-react"
-import { useMemo, useState } from "react"
-import { useConvexAuth, useMutation, usePaginatedQuery } from "convex/react"
+import { useEffect, useMemo, useState } from "react"
+import {
+  useConvexAuth,
+  useMutation,
+  usePaginatedQuery,
+  useQuery,
+} from "convex/react"
 import { makeFunctionReference, type PaginationOptions } from "convex/server"
 import { formatDistanceToNow } from "date-fns"
 import { formatUnits, parseUnits, type Address, type Hash } from "viem"
@@ -75,6 +80,27 @@ type PaymentSummary = {
   } | null
 }
 
+type PendingReconciliation = {
+  paymentId: string
+  sourceCustody: "circle" | "external"
+  status: "awaiting-approval" | "submitted"
+  txHash?: string
+}
+
+type WalletBalance = {
+  amount: string | null
+  baseUnits: string | null
+  balanceAvailable: boolean
+  walletAvailable: boolean
+}
+
+type SpendableBalance = {
+  destinationAddress: string
+  balanceBaseUnits: string
+  spendableBaseUnits: string
+  feeReserveBaseUnits: string
+}
+
 const createDraft = makeFunctionReference<
   "mutation",
   {
@@ -95,6 +121,11 @@ const listHistory = makeFunctionReference<
     continueCursor: string
   }
 >("payments:history")
+const listPendingReconciliations = makeFunctionReference<
+  "query",
+  Record<string, never>,
+  PendingReconciliation[]
+>("payments:pendingReconciliation")
 
 function initials(displayName: string) {
   return displayName
@@ -119,6 +150,10 @@ function amountToBaseUnits(amount: string) {
 
 function isIncompleteAmount(amount: string) {
   return /^(?:0|[1-9]\d*)\.$/.test(amount.trim())
+}
+
+function baseUnitsFromApi(value: string | null | undefined) {
+  return value && /^\d+$/.test(value) ? BigInt(value) : null
 }
 
 function statusLabel(status: string) {
@@ -179,6 +214,9 @@ export function PayDrawer({
   const [status, setStatus] = useState<string>()
   const [error, setError] = useState<string>()
   const [busy, setBusy] = useState(false)
+  const [walletBalance, setWalletBalance] = useState<WalletBalance>()
+  const [spendableBalance, setSpendableBalance] = useState<SpendableBalance>()
+  const [reconciliationAttempt, setReconciliationAttempt] = useState(0)
 
   const sentHistory = usePaginatedQuery(
     listHistory,
@@ -189,6 +227,10 @@ export function PayDrawer({
     listHistory,
     isAuthenticated ? { direction: "received" } : "skip",
     { initialNumItems: 20 }
+  )
+  const pendingReconciliations = useQuery(
+    listPendingReconciliations,
+    isAuthenticated ? {} : "skip"
   )
   const amountBaseUnits = useMemo(() => amountToBaseUnits(amount), [amount])
   const amountIsIncomplete = isIncompleteAmount(amount)
@@ -217,8 +259,158 @@ export function PayDrawer({
     (historyDirection !== "sent" && receivedHistory.status === "CanLoadMore")
   const coinArcRecipient =
     recipient?.type === "coinarc" ? recipient.recipient : null
+  const recipientAddress =
+    recipient?.type === "coinarc"
+      ? recipient.recipient.walletAddress
+      : recipient?.type === "address"
+        ? recipient.address
+        : undefined
+  const walletBalanceBaseUnits = baseUnitsFromApi(walletBalance?.baseUnits)
+  const spendableBalanceMatchesRecipient =
+    Boolean(recipientAddress) &&
+    walletBalanceBaseUnits !== null &&
+    spendableBalance?.destinationAddress.toLowerCase() ===
+      recipientAddress?.toLowerCase() &&
+    spendableBalance?.balanceBaseUnits === walletBalanceBaseUnits.toString()
+  const spendableBalanceBaseUnits = baseUnitsFromApi(
+    spendableBalanceMatchesRecipient
+      ? spendableBalance?.spendableBaseUnits
+      : undefined
+  )
+  const feeReserveBaseUnits = baseUnitsFromApi(
+    spendableBalanceMatchesRecipient
+      ? spendableBalance?.feeReserveBaseUnits
+      : undefined
+  )
+  const amountExceedsBalance =
+    amountBaseUnits !== null &&
+    walletBalanceBaseUnits !== null &&
+    amountBaseUnits > walletBalanceBaseUnits
+  const amountExceedsSpendableBalance =
+    amountBaseUnits !== null &&
+    spendableBalanceBaseUnits !== null &&
+    amountBaseUnits > spendableBalanceBaseUnits
+  const amountLimitMessage = amountExceedsSpendableBalance
+    ? feeReserveBaseUnits
+      ? `Leave ${formatUnits(feeReserveBaseUnits, ARC_TESTNET_USDC_DECIMALS)} USDC available for estimated network fees.`
+      : "This amount is not spendable after estimated network fees."
+    : amountExceedsBalance
+      ? "Insufficient USDC balance."
+      : undefined
+  const hasPendingPayment = Boolean(
+    draft &&
+    pendingReconciliations?.some(
+      (payment) => payment.paymentId === draft.paymentId
+    )
+  )
   const recipientReady = recipient !== null
-  const canReview = recipientReady && amountBaseUnits !== null
+  const canReview =
+    recipientReady &&
+    amountBaseUnits !== null &&
+    !amountExceedsBalance &&
+    !amountExceedsSpendableBalance
+
+  useEffect(() => {
+    if (!open) return
+    const controller = new AbortController()
+    void fetch("/api/wallet/balance", {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Could not load balance")
+        return (await response.json()) as WalletBalance
+      })
+      .then((data) => setWalletBalance(data))
+      .catch((reason: unknown) => {
+        if (!(reason instanceof DOMException && reason.name === "AbortError")) {
+          setWalletBalance({
+            amount: null,
+            baseUnits: null,
+            balanceAvailable: false,
+            walletAvailable: false,
+          })
+        }
+      })
+    return () => controller.abort()
+  }, [open])
+
+  useEffect(() => {
+    if (!open || !recipientAddress || !walletBalance?.balanceAvailable) {
+      return
+    }
+    const controller = new AbortController()
+    void fetch("/api/wallet/spendable", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ destinationAddress: recipientAddress }),
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok)
+          throw new Error("Could not estimate spendable balance")
+        return (await response.json()) as SpendableBalance
+      })
+      .then((data) => setSpendableBalance(data))
+      .catch((reason: unknown) => {
+        if (!(reason instanceof DOMException && reason.name === "AbortError")) {
+          setSpendableBalance(undefined)
+        }
+      })
+    return () => controller.abort()
+  }, [
+    open,
+    recipientAddress,
+    walletBalance?.balanceAvailable,
+    walletBalance?.baseUnits,
+  ])
+
+  useEffect(() => {
+    if (!isAuthenticated || !pendingReconciliations?.length) return
+    let cancelled = false
+    const authorization = readCircleAuthorization()
+
+    const reconcile = async (payment: PendingReconciliation) => {
+      if (payment.sourceCustody === "circle" && !authorization) return
+      if (payment.sourceCustody === "external" && !payment.txHash) return
+      try {
+        const response = await fetch(
+          payment.sourceCustody === "circle"
+            ? "/api/payments/circle/reconcile"
+            : "/api/payments/reconcile",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(
+              payment.sourceCustody === "circle"
+                ? {
+                    paymentId: payment.paymentId,
+                    userToken: authorization!.userToken,
+                  }
+                : { paymentId: payment.paymentId, txHash: payment.txHash }
+            ),
+          }
+        )
+        const data = await responseData(response)
+        if (!cancelled && response.ok && data.status === "confirmed") {
+          window.dispatchEvent(new Event("coinarc:payment-confirmed"))
+        }
+      } catch {
+        // A later reconciliation attempt can recover a transient network failure.
+      }
+    }
+
+    void Promise.all(pendingReconciliations.map(reconcile))
+    const timeout = window.setTimeout(
+      () => setReconciliationAttempt((attempt) => attempt + 1),
+      15_000
+    )
+    return () => {
+      cancelled = true
+      window.clearTimeout(timeout)
+    }
+  }, [isAuthenticated, pendingReconciliations, reconciliationAttempt])
 
   function resetDraft() {
     setDraft(null)
@@ -238,6 +430,13 @@ export function PayDrawer({
     resetDraft()
   }
 
+  function applyMaxAmount() {
+    if (spendableBalanceBaseUnits === null) return
+    changeAmount(
+      formatUnits(spendableBalanceBaseUnits, ARC_TESTNET_USDC_DECIMALS)
+    )
+  }
+
   function loadMoreHistory() {
     if (
       historyDirection !== "received" &&
@@ -255,7 +454,8 @@ export function PayDrawer({
 
   async function draftPayment() {
     if (draft) return draft
-    if (!amountBaseUnits || !recipient) {
+    if (!amountBaseUnits || !recipient || !canReview) {
+      if (amountLimitMessage) throw new Error(amountLimitMessage)
       throw new Error("Choose a recipient and enter a valid amount")
     }
     const requestId = clientRequestId ?? crypto.randomUUID()
@@ -367,7 +567,7 @@ export function PayDrawer({
   }
 
   async function sendPayment() {
-    if (busy) return
+    if (busy || hasPendingPayment) return
     setBusy(true)
     setError(undefined)
     try {
@@ -382,9 +582,8 @@ export function PayDrawer({
         window.dispatchEvent(new Event("coinarc:payment-confirmed"))
       } else {
         setStatus(
-          "Payment submitted. It will appear in history when Arc confirms it."
+          "Payment is still confirming on Arc Testnet. It will appear in history only after confirmation."
         )
-        setTab("history")
       }
     } catch (reason) {
       setStatus(undefined)
@@ -401,7 +600,8 @@ export function PayDrawer({
   function beginReview() {
     if (!canReview) {
       setError(
-        "Choose a recipient and enter a USDC amount with up to 6 decimals."
+        amountLimitMessage ??
+          "Choose a recipient and enter a USDC amount with up to 6 decimals."
       )
       return
     }
@@ -537,21 +737,60 @@ export function PayDrawer({
                     <Label htmlFor="pay-amount">Amount</Label>
                     <div className="relative">
                       <Input
+                        aria-invalid={amountLimitMessage ? true : undefined}
+                        className="pr-28"
                         id="pay-amount"
                         inputMode="decimal"
                         onChange={(event) => changeAmount(event.target.value)}
                         placeholder="0.00"
                         value={amount}
                       />
-                      <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm font-medium text-muted-foreground">
-                        USDC
+                      <span className="absolute inset-y-0 right-2 flex items-center gap-1 text-sm font-medium text-muted-foreground">
+                        <Button
+                          disabled={
+                            busy ||
+                            spendableBalanceBaseUnits === null ||
+                            spendableBalanceBaseUnits <= BigInt(0)
+                          }
+                          onClick={applyMaxAmount}
+                          size="xs"
+                          type="button"
+                          variant="ghost"
+                        >
+                          Max
+                        </Button>
+                        <span className="pointer-events-none">USDC</span>
                       </span>
                     </div>
-                    {amount && !amountBaseUnits && !amountIsIncomplete ? (
+                    {amountLimitMessage ? (
+                      <p className="text-xs text-destructive">
+                        {amountLimitMessage}
+                      </p>
+                    ) : amount && !amountBaseUnits && !amountIsIncomplete ? (
                       <p className="text-xs text-destructive">
                         Enter a positive amount with up to 6 decimal places.
                       </p>
                     ) : null}
+                    {walletBalance === undefined ? (
+                      <p className="text-xs text-muted-foreground">
+                        Checking available USDC balanceâ€¦
+                      </p>
+                    ) : walletBalance.balanceAvailable &&
+                      walletBalanceBaseUnits !== null ? (
+                      <p className="text-xs text-muted-foreground">
+                        Available:{" "}
+                        {formatUnits(
+                          walletBalanceBaseUnits,
+                          ARC_TESTNET_USDC_DECIMALS
+                        )}{" "}
+                        USDC
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Your balance could not be checked. Your wallet will
+                        confirm the final amount.
+                      </p>
+                    )}
                   </div>
 
                   {coinArcRecipient ? (
@@ -707,12 +946,16 @@ export function PayDrawer({
           {tab === "send" ? (
             reviewing ? (
               <Button
-                disabled={busy}
+                disabled={!canReview || busy || hasPendingPayment}
                 onClick={() => void sendPayment()}
                 type="button"
               >
                 {busy ? <LoaderCircle className="animate-spin" /> : <Send />}
-                {busy ? "Sending payment…" : "Send USDC"}
+                {busy
+                  ? "Sending payment…"
+                  : hasPendingPayment
+                    ? "Confirming payment…"
+                    : "Send USDC"}
               </Button>
             ) : (
               <Button

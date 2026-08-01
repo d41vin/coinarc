@@ -616,10 +616,9 @@ export const history = query({
     const result = await (args.direction === "sent"
       ? ctx.db
           .query("payments")
-          .withIndex("by_sender_id_and_created_at", (q) =>
-            q.eq("senderId", user._id)
+          .withIndex("by_sender_id_and_status_and_created_at", (q) =>
+            q.eq("senderId", user._id).eq("status", "confirmed")
           )
-          .filter((q) => q.neq(q.field("status"), "draft"))
           .order("desc")
           .paginate(args.paginationOpts)
       : ctx.db
@@ -635,6 +634,39 @@ export const history = query({
         result.page.map((payment) => paymentSummaryFor(ctx, payment, user._id))
       ),
     }
+  },
+})
+
+export const pendingReconciliation = query({
+  args: {},
+  handler: async (ctx) => {
+    const { user } = await currentOnboardedUser(ctx)
+    const [awaitingApproval, submitted] = await Promise.all([
+      ctx.db
+        .query("payments")
+        .withIndex("by_sender_id_and_status_and_created_at", (q) =>
+          q.eq("senderId", user._id).eq("status", "awaiting-approval")
+        )
+        .order("desc")
+        .take(10),
+      ctx.db
+        .query("payments")
+        .withIndex("by_sender_id_and_status_and_created_at", (q) =>
+          q.eq("senderId", user._id).eq("status", "submitted")
+        )
+        .order("desc")
+        .take(10),
+    ])
+
+    return [...awaitingApproval, ...submitted]
+      .sort((first, second) => second.createdAt - first.createdAt)
+      .slice(0, 10)
+      .map((payment) => ({
+        paymentId: payment._id,
+        sourceCustody: payment.sourceCustody,
+        status: payment.status,
+        txHash: payment.txHash,
+      }))
   },
 })
 

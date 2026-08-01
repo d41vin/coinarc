@@ -74,6 +74,11 @@ export default defineSchema({
       "clientRequestId",
     ])
     .index("by_sender_id_and_created_at", ["senderId", "createdAt"])
+    .index("by_sender_id_and_status_and_created_at", [
+      "senderId",
+      "status",
+      "createdAt",
+    ])
     .index("by_recipient_id_and_created_at", ["recipientUserId", "createdAt"])
     .index("by_recipient_id_and_status_and_created_at", [
       "recipientUserId",
