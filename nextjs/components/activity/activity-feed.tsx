@@ -5,6 +5,7 @@ import {
   ArrowUpRight,
   ReceiptText,
   Send,
+  UsersRound,
   WalletCards,
 } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
@@ -54,7 +55,29 @@ type RequestActivityItem = {
   counterparty: Counterparty | null
 }
 
-type ActivityItem = PaymentActivityItem | RequestActivityItem
+type SplitActivityItem = {
+  id: string
+  sourceType: "split"
+  type:
+    | "split-created"
+    | "split-invited"
+    | "split-contribution-paid"
+    | "split-participant-declined"
+    | "split-paid-outside"
+    | "split-closed"
+    | "split-cancelled"
+  splitId: string
+  title: string
+  emoji?: string
+  createdAt: number
+  amountBaseUnits: string
+  actor: Counterparty | null
+  actorIsViewer: boolean
+  subject: Counterparty | null
+}
+
+type ActivityItem =
+  PaymentActivityItem | RequestActivityItem | SplitActivityItem
 
 const listActivity = makeFunctionReference<
   "query",
@@ -63,7 +86,7 @@ const listActivity = makeFunctionReference<
 >("activity:list")
 
 function shortAddress(address: string) {
-  return `${address.slice(0, 6)}…${address.slice(-4)}`
+  return `${address.slice(0, 6)}...${address.slice(-4)}`
 }
 
 function requestLabel(item: RequestActivityItem, name: string) {
@@ -81,19 +104,51 @@ function requestLabel(item: RequestActivityItem, name: string) {
   }
 }
 
+function splitLabel(item: SplitActivityItem) {
+  const actor = item.actor?.displayName ?? "A friend"
+  const subject = item.subject?.displayName ?? "a participant"
+  const title = `${item.emoji ? `${item.emoji} ` : ""}${item.title}`
+  switch (item.type) {
+    case "split-created":
+      return `You started ${title}`
+    case "split-invited":
+      return `${actor} invited you to ${title}`
+    case "split-contribution-paid":
+      return item.actorIsViewer
+        ? `You contributed to ${title}`
+        : `${actor} contributed to ${title}`
+    case "split-participant-declined":
+      return `${actor} declined ${title}`
+    case "split-paid-outside":
+      return item.actorIsViewer
+        ? `You recorded ${subject}'s contribution outside CoinArc`
+        : `${actor} recorded your contribution outside CoinArc`
+    case "split-closed":
+      return item.actorIsViewer
+        ? `You closed ${title}`
+        : `${actor} closed ${title}`
+    case "split-cancelled":
+      return item.actorIsViewer
+        ? `You cancelled ${title}`
+        : `${actor} cancelled ${title}`
+  }
+}
+
 export function ActivityFeed({
   onOpenPayment,
   onOpenRequest,
+  onOpenSplit,
 }: {
   onOpenPayment: (paymentId: string) => void
   onOpenRequest: (requestId: string) => void
+  onOpenSplit: (splitId: string) => void
 }) {
   const { isAuthenticated } = useConvexAuth()
   const activity = useQuery(listActivity, isAuthenticated ? {} : "skip")
 
   if (activity === undefined) {
     return (
-      <p className="py-8 text-sm text-muted-foreground">Loading activity…</p>
+      <p className="py-8 text-sm text-muted-foreground">Loading activity...</p>
     )
   }
 
@@ -106,7 +161,8 @@ export function ActivityFeed({
           </EmptyMedia>
           <EmptyTitle>No activity yet</EmptyTitle>
           <EmptyDescription>
-            Payments and payment requests through CoinArc will appear here.
+            Payments, split bills, and payment requests through CoinArc will
+            appear here.
           </EmptyDescription>
         </EmptyHeader>
       </Empty>
@@ -121,21 +177,37 @@ export function ActivityFeed({
           ARC_TESTNET_USDC_DECIMALS
         )
         const isPayment = item.sourceType === "payment"
+        const isRequest = item.sourceType === "payment-request"
+        const isSplit = item.sourceType === "split"
         const isSent = isPayment && item.type === "payment-sent"
-        const name =
-          item.counterparty?.displayName ??
-          (isPayment ? shortAddress(item.destinationAddress) : "a friend")
+        const name = !isSplit
+          ? (item.counterparty?.displayName ??
+            (isPayment ? shortAddress(item.destinationAddress) : "a friend"))
+          : ""
         const label = isPayment
           ? isSent
             ? `You paid ${name}`
             : `${name} paid you`
-          : requestLabel(item, name)
+          : isRequest
+            ? requestLabel(item, name)
+            : splitLabel(item)
         const isIncomingRequest =
-          !isPayment && item.type === "payment-request-received"
+          isRequest && item.type === "payment-request-received"
         const isRequestPaid =
-          !isPayment &&
+          isRequest &&
           (item.type === "payment-request-paid" ||
             item.type === "payment-request-completed")
+        const splitContribution =
+          isSplit && item.type === "split-contribution-paid"
+        const amountPrefix = isPayment
+          ? isSent
+            ? "-"
+            : "+"
+          : splitContribution
+            ? item.actorIsViewer
+              ? "-"
+              : "+"
+            : ""
 
         return (
           <Button
@@ -144,7 +216,9 @@ export function ActivityFeed({
             onClick={() =>
               isPayment
                 ? onOpenPayment(item.paymentId)
-                : onOpenRequest(item.requestId)
+                : isRequest
+                  ? onOpenRequest(item.requestId)
+                  : onOpenSplit(item.splitId)
             }
             type="button"
             variant="ghost"
@@ -155,7 +229,7 @@ export function ActivityFeed({
                   ? isSent
                     ? "bg-muted"
                     : "bg-primary text-primary-foreground"
-                  : isIncomingRequest
+                  : isSplit || isIncomingRequest
                     ? "bg-primary text-primary-foreground"
                     : "bg-muted"
               }`}
@@ -166,6 +240,8 @@ export function ActivityFeed({
                 ) : (
                   <ArrowDownLeft className="size-5" />
                 )
+              ) : isSplit ? (
+                <UsersRound className="size-5" />
               ) : isRequestPaid ? (
                 <Send className="size-4" />
               ) : (
@@ -181,7 +257,7 @@ export function ActivityFeed({
               </span>
             </span>
             <span className="ml-3 font-medium tabular-nums">
-              {isPayment ? (isSent ? "−" : "+") : ""}
+              {amountPrefix}
               {amount}
             </span>
           </Button>

@@ -56,6 +56,7 @@ import {
   arcUsdcAbi,
 } from "@/lib/arc-testnet"
 import { readCircleAuthorization } from "@/lib/circle-authorization"
+import type { SplitFulfillment } from "@/components/splits/split-drawer"
 
 type DraftPayment = {
   paymentId: string
@@ -110,6 +111,7 @@ const createDraft = makeFunctionReference<
     amountBaseUnits: string
     note?: string
     paymentRequestId?: string
+    splitParticipantId?: string
     clientRequestId: string
   },
   DraftPayment
@@ -198,18 +200,22 @@ export function PayDrawer({
   onOpenChange,
   onOpenPayment,
   onReturnToRequest,
+  onReturnToSplit,
   open,
   requestFulfillment,
+  splitFulfillment,
 }: {
   onOpenChange: (open: boolean) => void
   onOpenPayment: (paymentId: string) => void
   onReturnToRequest?: () => void
+  onReturnToSplit?: () => void
   open: boolean
   requestFulfillment?: {
     requestId: string
     recipient: CoinArcRecipient
     amountBaseUnits: string
   } | null
+  splitFulfillment?: SplitFulfillment | null
 }) {
   const { address: connectedAddress } = useAccount()
   const chainId = useChainId()
@@ -222,14 +228,17 @@ export function PayDrawer({
     "all" | "sent" | "received"
   >("all")
   const [recipient, setRecipient] = useState<PaymentRecipient | null>(() =>
-    requestFulfillment
-      ? { type: "coinarc", recipient: requestFulfillment.recipient }
+    requestFulfillment || splitFulfillment
+      ? {
+          type: "coinarc",
+          recipient: (requestFulfillment ?? splitFulfillment)!.recipient,
+        }
       : null
   )
   const [amount, setAmount] = useState(() =>
-    requestFulfillment
+    requestFulfillment || splitFulfillment
       ? formatUnits(
-          BigInt(requestFulfillment.amountBaseUnits),
+          BigInt((requestFulfillment ?? splitFulfillment)!.amountBaseUnits),
           ARC_TESTNET_USDC_DECIMALS
         )
       : ""
@@ -245,6 +254,8 @@ export function PayDrawer({
   const [spendableBalance, setSpendableBalance] = useState<SpendableBalance>()
   const [reconciliationAttempt, setReconciliationAttempt] = useState(0)
   const isRequestFulfillment = Boolean(requestFulfillment)
+  const isSplitFulfillment = Boolean(splitFulfillment)
+  const isFeatureFulfillment = isRequestFulfillment || isSplitFulfillment
 
   const sentHistory = usePaginatedQuery(
     listHistory,
@@ -499,6 +510,9 @@ export function PayDrawer({
       ...(requestFulfillment
         ? { paymentRequestId: requestFulfillment.requestId }
         : {}),
+      ...(splitFulfillment
+        ? { splitParticipantId: splitFulfillment.splitParticipantId }
+        : {}),
       clientRequestId: requestId,
     })
     setDraft(created)
@@ -611,8 +625,9 @@ export function PayDrawer({
       if (confirmed) {
         setStatus("Payment confirmed on Arc Testnet.")
         window.dispatchEvent(new Event("coinarc:payment-confirmed"))
-        if (isRequestFulfillment) {
-          onReturnToRequest?.()
+        if (isFeatureFulfillment) {
+          if (isRequestFulfillment) onReturnToRequest?.()
+          else onReturnToSplit?.()
         } else {
           setTab("history")
         }
@@ -622,7 +637,7 @@ export function PayDrawer({
         )
       }
     } catch (reason) {
-      if (isRequestFulfillment && payment) {
+      if (isFeatureFulfillment && payment) {
         try {
           const cancelled = await cancelPaymentDraft({
             paymentId: payment.paymentId,
@@ -663,8 +678,9 @@ export function PayDrawer({
   }
 
   function handleDrawerOpenChange(nextOpen: boolean) {
-    if (!nextOpen && isRequestFulfillment && !busy) {
-      onReturnToRequest?.()
+    if (!nextOpen && isFeatureFulfillment && !busy) {
+      if (isRequestFulfillment) onReturnToRequest?.()
+      else onReturnToSplit?.()
       return
     }
     if (!nextOpen) {
@@ -680,12 +696,18 @@ export function PayDrawer({
       <DrawerContent className="md:!mx-auto md:[--drawer-content-width:39rem]">
         <DrawerHeader>
           <DrawerTitle>
-            {isRequestFulfillment ? "Pay request" : "Pay"}
+            {isRequestFulfillment
+              ? "Pay request"
+              : isSplitFulfillment
+                ? "Pay your contribution"
+                : "Pay"}
           </DrawerTitle>
           <DrawerDescription>
             {isRequestFulfillment
               ? "Pay this exact CoinArc payment request with USDC on Arc Testnet."
-              : "Send USDC on Arc Testnet to a CoinArc member or wallet address."}
+              : isSplitFulfillment
+                ? `Contribute your fixed share to ${splitFulfillment?.title ?? "this split"}.`
+                : "Send USDC on Arc Testnet to a CoinArc member or wallet address."}
           </DrawerDescription>
         </DrawerHeader>
 
@@ -694,7 +716,7 @@ export function PayDrawer({
             onValueChange={(value) => setTab(value as "send" | "history")}
             value={tab}
           >
-            {!isRequestFulfillment ? (
+            {!isFeatureFulfillment ? (
               <TabsList className="w-full">
                 <TabsTrigger value="send">Send</TabsTrigger>
                 <TabsTrigger value="history">History</TabsTrigger>
@@ -708,14 +730,20 @@ export function PayDrawer({
                     className="-ml-3"
                     disabled={busy}
                     onClick={() => {
-                      if (isRequestFulfillment) onReturnToRequest?.()
-                      else setReviewing(false)
+                      if (isFeatureFulfillment) {
+                        if (isRequestFulfillment) onReturnToRequest?.()
+                        else onReturnToSplit?.()
+                      } else setReviewing(false)
                     }}
                     type="button"
                     variant="ghost"
                   >
                     <ArrowLeft />
-                    {isRequestFulfillment ? "Back to request" : "Edit payment"}
+                    {isRequestFulfillment
+                      ? "Back to request"
+                      : isSplitFulfillment
+                        ? "Back to split"
+                        : "Edit payment"}
                   </Button>
                   <div className="rounded-3xl border bg-muted/40 p-5">
                     <p className="text-sm text-muted-foreground">
@@ -785,10 +813,20 @@ export function PayDrawer({
                 </div>
               ) : (
                 <div className="space-y-5">
+                  {isSplitFulfillment ? (
+                    <div className="rounded-2xl border bg-muted/40 p-4 text-sm text-muted-foreground">
+                      You are contributing to{" "}
+                      <span className="font-medium text-foreground">
+                        {splitFulfillment?.title}
+                      </span>
+                      . Your recipient and amount are fixed so this payment
+                      settles the correct share.
+                    </div>
+                  ) : null}
                   <div className="space-y-2">
                     <Label htmlFor="pay-recipient">To</Label>
                     <RecipientPicker
-                      disabled={busy}
+                      disabled={Boolean(busy) || isFeatureFulfillment}
                       id="pay-recipient"
                       onChange={changeRecipient}
                       value={recipient}
@@ -801,6 +839,7 @@ export function PayDrawer({
                       <Input
                         aria-invalid={amountLimitMessage ? true : undefined}
                         className="pr-28"
+                        disabled={Boolean(busy) || isFeatureFulfillment}
                         id="pay-amount"
                         inputMode="decimal"
                         onChange={(event) => changeAmount(event.target.value)}
@@ -811,6 +850,7 @@ export function PayDrawer({
                         <Button
                           disabled={
                             busy ||
+                            isFeatureFulfillment ||
                             spendableBalanceBaseUnits === null ||
                             spendableBalanceBaseUnits <= BigInt(0)
                           }
@@ -857,7 +897,11 @@ export function PayDrawer({
 
                   {coinArcRecipient ? (
                     <div className="space-y-2">
-                      <Label htmlFor="pay-note">Private note (optional)</Label>
+                      <Label htmlFor="pay-note">
+                        {isSplitFulfillment
+                          ? "Private note to collector (optional)"
+                          : "Private note (optional)"}
+                      </Label>
                       <Textarea
                         id="pay-note"
                         maxLength={280}
@@ -902,7 +946,7 @@ export function PayDrawer({
               ) : null}
             </TabsContent>
 
-            {!isRequestFulfillment ? (
+            {!isFeatureFulfillment ? (
               <TabsContent className="pt-5" value="history">
                 <Tabs
                   onValueChange={(value) =>
@@ -1023,7 +1067,9 @@ export function PayDrawer({
                     ? "Confirming payment…"
                     : isRequestFulfillment
                       ? "Pay request"
-                      : "Send USDC"}
+                      : isSplitFulfillment
+                        ? "Pay contribution"
+                        : "Send USDC"}
               </Button>
             ) : (
               <Button
@@ -1042,7 +1088,11 @@ export function PayDrawer({
             type="button"
             variant="outline"
           >
-            {isRequestFulfillment ? "Back to request" : "Close"}
+            {isRequestFulfillment
+              ? "Back to request"
+              : isSplitFulfillment
+                ? "Back to split"
+                : "Close"}
           </Button>
         </DrawerFooter>
       </DrawerContent>

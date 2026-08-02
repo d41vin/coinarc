@@ -105,22 +105,57 @@ export const list = query({
           }
         }
 
-        const request = await ctx.db.get(item.source.id)
-        if (!request) return null
-        const counterpartyId =
-          item.type === "payment-request-sent" ||
-          item.type === "payment-request-declined" ||
-          item.type === "payment-request-completed"
-            ? request.recipientId
-            : request.requesterId
+        if (item.source.type === "payment-request") {
+          const request = await ctx.db.get(item.source.id)
+          if (!request) return null
+          const counterpartyId =
+            item.type === "payment-request-sent" ||
+            item.type === "payment-request-declined" ||
+            item.type === "payment-request-completed"
+              ? request.recipientId
+              : request.requesterId
+          return {
+            id: item._id,
+            sourceType: "payment-request" as const,
+            type: item.type,
+            requestId: request._id,
+            createdAt: item.createdAt,
+            amountBaseUnits: request.amountBaseUnits,
+            counterparty: await profileFor(ctx, counterpartyId),
+          }
+        }
+
+        const split = await ctx.db.get(item.source.id)
+        if (!split) return null
+        const participants = await ctx.db
+          .query("splitParticipants")
+          .withIndex("by_split_id", (q) => q.eq("splitId", split._id))
+          .take(20)
+        const relatedParticipantId =
+          item.subjectId ??
+          (item.type === "split-invited" ||
+          item.type === "split-closed" ||
+          item.type === "split-cancelled"
+            ? viewer._id
+            : item.actorId)
+        const participant = participants.find(
+          (entry) => entry.participantId === relatedParticipantId
+        )
         return {
           id: item._id,
-          sourceType: "payment-request" as const,
+          sourceType: "split" as const,
           type: item.type,
-          requestId: request._id,
+          splitId: split._id,
+          title: split.title,
+          emoji: split.emoji,
           createdAt: item.createdAt,
-          amountBaseUnits: request.amountBaseUnits,
-          counterparty: await profileFor(ctx, counterpartyId),
+          amountBaseUnits:
+            participant?.amountBaseUnits ?? split.collectionTargetBaseUnits,
+          actor: await profileFor(ctx, item.actorId),
+          actorIsViewer: item.actorId === viewer._id,
+          subject: item.subjectId
+            ? await profileFor(ctx, item.subjectId)
+            : null,
         }
       })
     )

@@ -25,6 +25,14 @@ type NotificationType =
   | "payment-request-received"
   | "payment-request-declined"
   | "payment-request-completed"
+  | "split-invited"
+  | "split-reminder"
+  | "split-participant-paid"
+  | "split-participant-declined"
+  | "split-paid-outside"
+  | "split-deadline-extended"
+  | "split-closed"
+  | "split-cancelled"
 
 type NotificationActor = {
   avatarUrl?: string
@@ -242,6 +250,42 @@ export async function createPaymentRequestNotification(
   await retainNewestNotifications(ctx, recipientId)
 }
 
+export async function createSplitNotification(
+  ctx: MutationCtx,
+  {
+    recipientId,
+    actorId,
+    splitId,
+    type,
+    createdAt,
+  }: {
+    recipientId: Id<"users">
+    actorId: Id<"users">
+    splitId: Id<"splits">
+    type:
+      | "split-invited"
+      | "split-reminder"
+      | "split-participant-paid"
+      | "split-participant-declined"
+      | "split-paid-outside"
+      | "split-deadline-extended"
+      | "split-closed"
+      | "split-cancelled"
+    createdAt: number
+  }
+) {
+  await ctx.db.insert("notifications", {
+    recipientId,
+    actorId,
+    type,
+    source: { type: "split", id: splitId },
+    createdAt,
+    isRead: false,
+  })
+  await changeUnreadCount(ctx, recipientId, 1)
+  await retainNewestNotifications(ctx, recipientId)
+}
+
 export async function deleteNotificationsForFriendRequest(
   ctx: MutationCtx,
   requestId: Id<"friendRequests">
@@ -267,6 +311,23 @@ export async function deleteNotificationsForPaymentRequest(
 
   for (const notification of notifications) {
     await deleteNotification(ctx, notification)
+  }
+}
+
+export async function deleteNotificationsForSplitParticipant(
+  ctx: MutationCtx,
+  splitId: Id<"splits">,
+  recipientId: Id<"users">
+) {
+  const notifications = await ctx.db
+    .query("notifications")
+    .withIndex("by_source_id", (q) => q.eq("source.id", splitId))
+    .take(MAX_NOTIFICATIONS_PER_USER)
+
+  for (const notification of notifications) {
+    if (notification.recipientId === recipientId) {
+      await deleteNotification(ctx, notification)
+    }
   }
 }
 

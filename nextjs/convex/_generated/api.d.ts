@@ -15,6 +15,7 @@ import type * as friends from "../friends.js";
 import type * as notifications from "../notifications.js";
 import type * as paymentRequests from "../paymentRequests.js";
 import type * as payments from "../payments.js";
+import type * as splits from "../splits.js";
 import type * as users from "../users.js";
 
 import type {
@@ -31,6 +32,7 @@ declare const fullApi: ApiFromModules<{
   notifications: typeof notifications;
   paymentRequests: typeof paymentRequests;
   payments: typeof payments;
+  splits: typeof splits;
   users: typeof users;
 }>;
 

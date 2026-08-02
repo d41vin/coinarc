@@ -10,6 +10,12 @@ import {
   releasePaymentRequestFulfillment,
   reservePaymentRequestForFulfillment,
 } from "./paymentRequests"
+import {
+  completeSplitParticipantFulfillment,
+  destinationForSplitParticipant,
+  releaseSplitParticipantFulfillment,
+  reserveSplitParticipantForFulfillment,
+} from "./splits"
 
 const ARC_TESTNET_CHAIN_ID = 5_042_002
 const MAX_SEARCH_RESULTS = 8
@@ -390,12 +396,16 @@ export const createDraft = mutation({
     amountBaseUnits: v.string(),
     note: v.optional(v.string()),
     paymentRequestId: v.optional(v.id("paymentRequests")),
+    splitParticipantId: v.optional(v.id("splitParticipants")),
     clientRequestId: v.string(),
   },
   handler: async (ctx, args) => {
     const { user: sender, wallet: sourceWallet } =
       await currentOnboardedUser(ctx)
     const amountBaseUnits = validBaseUnits(args.amountBaseUnits)
+    if (args.paymentRequestId && args.splitParticipantId) {
+      throw new Error("A payment can fulfill only one CoinArc request")
+    }
     if (
       !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
         args.clientRequestId
@@ -431,6 +441,12 @@ export const createDraft = mutation({
       )
       recipientUserId = resolved.recipient._id
       destinationAddress = resolved.wallet.address
+      if (args.splitParticipantId) {
+        destinationAddress = await destinationForSplitParticipant(
+          ctx,
+          args.splitParticipantId
+        )
+      }
       const trimmedNote = args.note?.trim()
       if (trimmedNote) {
         if (trimmedNote.length > MAX_NOTE_LENGTH)
@@ -440,8 +456,8 @@ export const createDraft = mutation({
         note = trimmedNote
       }
     } else {
-      if (args.paymentRequestId) {
-        throw new Error("Payment requests can only be paid to CoinArc friends")
+      if (args.paymentRequestId || args.splitParticipantId) {
+        throw new Error("CoinArc requests can only be paid to CoinArc friends")
       }
       if (args.note?.trim()) {
         throw new Error(
@@ -467,6 +483,7 @@ export const createDraft = mutation({
       clientRequestId: args.clientRequestId,
       status: "draft",
       paymentRequestId: args.paymentRequestId,
+      splitParticipantId: args.splitParticipantId,
       createdAt,
     })
     if (args.paymentRequestId) {
@@ -475,6 +492,16 @@ export const createDraft = mutation({
         paymentId,
         payerId: sender._id,
         requesterId: recipientUserId!,
+        amountBaseUnits,
+        destinationAddress,
+      })
+    }
+    if (args.splitParticipantId) {
+      await reserveSplitParticipantForFulfillment(ctx, {
+        splitParticipantId: args.splitParticipantId,
+        paymentId,
+        payerId: sender._id,
+        creatorId: recipientUserId!,
         amountBaseUnits,
         destinationAddress,
       })
@@ -590,7 +617,14 @@ export const confirm = mutation({
           completedAt: confirmedAt,
         })
       : false
-    if (!completedRequest) {
+    const completedSplit = payment.splitParticipantId
+      ? await completeSplitParticipantFulfillment(ctx, {
+          splitParticipantId: payment.splitParticipantId,
+          paymentId: payment._id,
+          completedAt: confirmedAt,
+        })
+      : false
+    if (!completedRequest && !completedSplit) {
       await ctx.db.insert("activityItems", {
         userId: payment.senderId,
         actorId: payment.recipientUserId ?? payment.senderId,
@@ -636,6 +670,11 @@ export const fail = mutation({
       payment.paymentRequestId,
       payment._id
     )
+    await releaseSplitParticipantFulfillment(
+      ctx,
+      payment.splitParticipantId,
+      payment._id
+    )
     return null
   },
 })
@@ -654,6 +693,11 @@ export const cancelDraft = mutation({
     await releasePaymentRequestFulfillment(
       ctx,
       payment.paymentRequestId,
+      payment._id
+    )
+    await releaseSplitParticipantFulfillment(
+      ctx,
+      payment.splitParticipantId,
       payment._id
     )
     return { cancelled: true }

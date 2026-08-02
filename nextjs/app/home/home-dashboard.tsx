@@ -26,6 +26,10 @@ import {
   RequestDrawer,
   type RequestFulfillment,
 } from "@/components/payments/request-drawer"
+import {
+  SplitDrawer,
+  type SplitFulfillment,
+} from "@/components/splits/split-drawer"
 import { ReceiveDialog } from "@/components/payments/receive-dialog"
 import { Button } from "@/components/ui/button"
 import {
@@ -436,11 +440,15 @@ export function HomeDashboard({
   const pinnedActionIds = new Set(savedPinnedActions ?? [])
   const selectedPaymentId = searchParams.get("payment")
   const selectedRequestId = searchParams.get("request")
+  const selectedSplitId = searchParams.get("split")
   const [requestFulfillment, setRequestFulfillment] =
     useState<RequestFulfillment | null>(null)
+  const [splitFulfillment, setSplitFulfillment] =
+    useState<SplitFulfillment | null>(null)
   const requestAction = additionalActions.find(
     (action) => action.id === "request-payment"
   )!
+  const splitAction = coreActions.find((action) => action.id === "split")!
 
   function openPayment(paymentId: string) {
     const next = new URLSearchParams(searchParams.toString())
@@ -469,10 +477,29 @@ export function HomeDashboard({
     router.replace(query ? `/home?${query}` : "/home")
   }
 
+  function openSplit(splitId: string) {
+    const next = new URLSearchParams(searchParams.toString())
+    next.set("split", splitId)
+    router.push(`/home?${next.toString()}`)
+  }
+
+  function closeSplitDetail() {
+    const next = new URLSearchParams(searchParams.toString())
+    next.delete("split")
+    const query = next.toString()
+    router.replace(query ? `/home?${query}` : "/home")
+  }
+
   function returnToRequestDetails() {
     const requestId = requestFulfillment?.requestId
     setRequestFulfillment(null)
     if (requestId) openRequest(requestId)
+  }
+
+  function returnToSplitDetails() {
+    const splitId = splitFulfillment?.splitId
+    setSplitFulfillment(null)
+    if (splitId) openSplit(splitId)
   }
 
   async function togglePinned(actionId: AdditionalActionId) {
@@ -564,6 +591,7 @@ export function HomeDashboard({
                 <ActivityFeed
                   onOpenPayment={openPayment}
                   onOpenRequest={openRequest}
+                  onOpenSplit={openSplit}
                 />
               </TabsContent>
               <TabsContent className="pt-4" value="friends">
@@ -582,7 +610,8 @@ export function HomeDashboard({
           activeAction !== null &&
           activeAction.id !== "pay" &&
           activeAction.id !== "receive" &&
-          activeAction.id !== "request-payment"
+          activeAction.id !== "request-payment" &&
+          activeAction.id !== "split"
         }
         showSwipeHandle
       >
@@ -616,17 +645,28 @@ export function HomeDashboard({
         </DrawerContent>
       </Drawer>
       <PayDrawer
-        key={requestFulfillment?.requestId ?? "pay"}
+        key={
+          requestFulfillment?.requestId ??
+          splitFulfillment?.splitParticipantId ??
+          "pay"
+        }
         onOpenChange={(open) => {
           if (!open) {
             setRequestFulfillment(null)
+            setSplitFulfillment(null)
             setActiveAction(null)
           }
         }}
         onOpenPayment={openPayment}
         onReturnToRequest={returnToRequestDetails}
-        open={activeAction?.id === "pay" || requestFulfillment !== null}
+        onReturnToSplit={returnToSplitDetails}
+        open={
+          activeAction?.id === "pay" ||
+          requestFulfillment !== null ||
+          splitFulfillment !== null
+        }
         requestFulfillment={requestFulfillment}
+        splitFulfillment={splitFulfillment}
       />
       <RequestDrawer
         onBackToHistory={() => {
@@ -645,6 +685,25 @@ export function HomeDashboard({
           (activeAction?.id === "request-payment" || selectedRequestId !== null)
         }
         requestId={selectedRequestId}
+      />
+      <SplitDrawer
+        onBackToHistory={() => {
+          setActiveAction(splitAction)
+          closeSplitDetail()
+        }}
+        onOpenChange={(open) => {
+          if (!open) {
+            setActiveAction(null)
+            closeSplitDetail()
+          }
+        }}
+        onOpenSplit={openSplit}
+        onPayContribution={(fulfillment) => setSplitFulfillment(fulfillment)}
+        open={
+          splitFulfillment === null &&
+          (activeAction?.id === "split" || selectedSplitId !== null)
+        }
+        splitId={selectedSplitId}
       />
       <ReceiveDialog
         address={receivingAddress}

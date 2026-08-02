@@ -12,6 +12,7 @@ import {
   restoreDirectConversationBetween,
 } from "./directMessages"
 import { cancelPendingPaymentRequestsBetween } from "./paymentRequests"
+import { cancelPendingSplitParticipantsBetween } from "./splits"
 
 const ARC_TESTNET_CHAIN_ID = 5_042_002
 const MAX_LIST_ITEMS = 100
@@ -352,6 +353,7 @@ export const removeFriend = mutation({
     if (viewerFriendship) await ctx.db.delete(viewerFriendship._id)
     if (reciprocalFriendship) await ctx.db.delete(reciprocalFriendship._id)
     await cancelPendingPaymentRequestsBetween(ctx, viewer._id, friend._id)
+    await cancelPendingSplitParticipantsBetween(ctx, viewer._id, friend._id)
     await archiveDirectConversationBetween(ctx, viewer._id, friend._id)
     return { status: "not-connected" satisfies FriendshipStatus }
   },
@@ -397,6 +399,11 @@ export const blockUser = mutation({
       if (request) await deleteNotificationsForFriendRequest(ctx, request._id)
     }
     await cancelPendingPaymentRequestsBetween(ctx, viewer._id, blockedUser._id)
+    await cancelPendingSplitParticipantsBetween(
+      ctx,
+      viewer._id,
+      blockedUser._id
+    )
     await archiveDirectConversationBetween(ctx, viewer._id, blockedUser._id)
     return { status: "blocked-by-viewer" satisfies FriendshipStatus }
   },

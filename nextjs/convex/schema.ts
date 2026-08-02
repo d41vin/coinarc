@@ -65,6 +65,7 @@ export default defineSchema({
     txHash: v.optional(v.string()),
     failureReason: v.optional(v.string()),
     paymentRequestId: v.optional(v.id("paymentRequests")),
+    splitParticipantId: v.optional(v.id("splitParticipants")),
     createdAt: v.number(),
     submittedAt: v.optional(v.number()),
     confirmedAt: v.optional(v.number()),
@@ -87,7 +88,8 @@ export default defineSchema({
       "createdAt",
     ])
     .index("by_tx_hash", ["txHash"])
-    .index("by_payment_request_id", ["paymentRequestId"]),
+    .index("by_payment_request_id", ["paymentRequestId"])
+    .index("by_split_participant_id", ["splitParticipantId"]),
   paymentNotes: defineTable({
     paymentId: v.id("payments"),
     senderId: v.id("users"),
@@ -132,9 +134,63 @@ export default defineSchema({
       "isOpen",
     ])
     .index("by_fulfillment_payment_id", ["fulfillmentPaymentId"]),
+  splits: defineTable({
+    creatorId: v.id("users"),
+    collectorWalletAddress: v.string(),
+    title: v.string(),
+    description: v.optional(v.string()),
+    emoji: v.optional(v.string()),
+    totalAmountBaseUnits: v.string(),
+    creatorShareBaseUnits: v.string(),
+    collectionTargetBaseUnits: v.string(),
+    splitMode: v.union(v.literal("equal"), v.literal("custom")),
+    clientRequestId: v.string(),
+    status: v.union(
+      v.literal("active"),
+      v.literal("completed"),
+      v.literal("closed"),
+      v.literal("cancelled")
+    ),
+    expiresAt: v.optional(v.number()),
+    createdAt: v.number(),
+    completedAt: v.optional(v.number()),
+    closedAt: v.optional(v.number()),
+    cancelledAt: v.optional(v.number()),
+  })
+    .index("by_creator_id_and_client_request_id", [
+      "creatorId",
+      "clientRequestId",
+    ])
+    .index("by_creator_id_and_created_at", ["creatorId", "createdAt"]),
+  splitParticipants: defineTable({
+    splitId: v.id("splits"),
+    participantId: v.id("users"),
+    amountBaseUnits: v.string(),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("payment-processing"),
+      v.literal("paid-in-app"),
+      v.literal("paid-outside"),
+      v.literal("declined"),
+      v.literal("cancelled")
+    ),
+    invitedAt: v.number(),
+    fulfillmentPaymentId: v.optional(v.id("payments")),
+    paymentStartedAt: v.optional(v.number()),
+    paidAt: v.optional(v.number()),
+    paidOutsideAt: v.optional(v.number()),
+    declinedAt: v.optional(v.number()),
+    cancelledAt: v.optional(v.number()),
+    reminderSentAt: v.optional(v.number()),
+  })
+    .index("by_split_id", ["splitId"])
+    .index("by_participant_id_and_invited_at", ["participantId", "invitedAt"])
+    .index("by_split_id_and_participant_id", ["splitId", "participantId"])
+    .index("by_fulfillment_payment_id", ["fulfillmentPaymentId"]),
   activityItems: defineTable({
     userId: v.id("users"),
     actorId: v.id("users"),
+    subjectId: v.optional(v.id("users")),
     type: v.union(
       v.literal("payment-sent"),
       v.literal("payment-received"),
@@ -142,14 +198,22 @@ export default defineSchema({
       v.literal("payment-request-received"),
       v.literal("payment-request-declined"),
       v.literal("payment-request-paid"),
-      v.literal("payment-request-completed")
+      v.literal("payment-request-completed"),
+      v.literal("split-created"),
+      v.literal("split-invited"),
+      v.literal("split-contribution-paid"),
+      v.literal("split-participant-declined"),
+      v.literal("split-paid-outside"),
+      v.literal("split-closed"),
+      v.literal("split-cancelled")
     ),
     source: v.union(
       v.object({ type: v.literal("payment"), id: v.id("payments") }),
       v.object({
         type: v.literal("payment-request"),
         id: v.id("paymentRequests"),
-      })
+      }),
+      v.object({ type: v.literal("split"), id: v.id("splits") })
     ),
     createdAt: v.number(),
   }).index("by_user_id_and_created_at", ["userId", "createdAt"]),
@@ -247,7 +311,15 @@ export default defineSchema({
       v.literal("payment-received"),
       v.literal("payment-request-received"),
       v.literal("payment-request-declined"),
-      v.literal("payment-request-completed")
+      v.literal("payment-request-completed"),
+      v.literal("split-invited"),
+      v.literal("split-reminder"),
+      v.literal("split-participant-paid"),
+      v.literal("split-participant-declined"),
+      v.literal("split-paid-outside"),
+      v.literal("split-deadline-extended"),
+      v.literal("split-closed"),
+      v.literal("split-cancelled")
     ),
     source: v.union(
       v.object({
@@ -258,7 +330,8 @@ export default defineSchema({
       v.object({
         type: v.literal("payment-request"),
         id: v.id("paymentRequests"),
-      })
+      }),
+      v.object({ type: v.literal("split"), id: v.id("splits") })
     ),
     createdAt: v.number(),
     isRead: v.boolean(),
