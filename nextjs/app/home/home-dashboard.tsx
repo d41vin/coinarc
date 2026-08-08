@@ -302,7 +302,10 @@ function WalletBalance() {
     const refresh = () => {
       controller?.abort()
       controller = new AbortController()
-      void fetch("/api/wallet/balance", { signal: controller.signal })
+      void fetch("/api/wallet/balance", {
+        cache: "no-store",
+        signal: controller.signal,
+      })
         .then(async (response) => {
           if (!response.ok) throw new Error("Could not load balance")
           return (await response.json()) as BalanceData
@@ -323,9 +326,11 @@ function WalletBalance() {
 
     refresh()
     window.addEventListener("coinarc:payment-confirmed", refresh)
+    window.addEventListener("coinarc:wallet-balance-refresh", refresh)
     return () => {
       controller?.abort()
       window.removeEventListener("coinarc:payment-confirmed", refresh)
+      window.removeEventListener("coinarc:wallet-balance-refresh", refresh)
     }
   }, [])
 

@@ -684,6 +684,9 @@ export function PayDrawer({
       return
     }
     if (!nextOpen) {
+      if (draft && status) {
+        window.dispatchEvent(new Event("coinarc:wallet-balance-refresh"))
+      }
       setReviewing(false)
       setStatus(undefined)
       setError(undefined)

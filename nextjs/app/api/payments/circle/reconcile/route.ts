@@ -46,20 +46,59 @@ export async function POST(request: Request) {
     if (payment.status === "confirmed") {
       return NextResponse.json({ status: "confirmed" })
     }
-    const transactions = await initiateUserControlledWalletsClient({
-      apiKey,
-    }).listTransactions({
-      userToken,
-      blockchain: "ARC-TESTNET",
-      walletIds: [session.wallet.circleWalletId],
-      pageSize: 20,
-      order: "DESC",
-    })
-    const transaction = (transactions.data?.transactions ?? []).find(
-      (candidate) => candidate.refId === payment._id
-    )
+    const circle = initiateUserControlledWalletsClient({ apiKey })
+    let transaction
+
+    // A completed Circle challenge contains the exact transaction ID. Looking
+    // it up directly avoids waiting for the eventually-consistent transaction
+    // list (and avoids losing an older payment beyond that list's first page).
+    if (payment.circleChallengeId) {
+      try {
+        const challengeResponse = await circle.getUserChallenge({
+          challengeId: payment.circleChallengeId,
+          userToken,
+        })
+        const challenge = challengeResponse.data?.challenge
+        if (challenge?.status === "FAILED" || challenge?.status === "EXPIRED") {
+          await failPaymentForSession(
+            session,
+            paymentId,
+            challenge.errorMessage || "Circle wallet approval did not complete."
+          )
+          return NextResponse.json({ status: "failed" })
+        }
+        const transactionId = challenge?.correlationIds?.[0]
+        if (transactionId) {
+          const transactionResponse = await circle.getTransaction({
+            id: transactionId,
+            userToken,
+          })
+          transaction = transactionResponse.data?.transaction
+        }
+      } catch {
+        // Older Circle records may not support direct challenge lookup. The
+        // reference-based fallback below still allows them to reconcile.
+      }
+    }
+
+    if (!transaction) {
+      const transactions = await circle.listTransactions({
+        userToken,
+        blockchain: "ARC-TESTNET",
+        walletIds: [session.wallet.circleWalletId],
+        pageSize: 20,
+        order: "DESC",
+      })
+      transaction = (transactions.data?.transactions ?? []).find(
+        (candidate) => candidate.refId === payment._id
+      )
+    }
     if (!transaction) return NextResponse.json({ status: "awaiting-approval" })
-    if (transaction.state === "FAILED") {
+    if (
+      transaction.state === "FAILED" ||
+      transaction.state === "DENIED" ||
+      transaction.state === "CANCELLED"
+    ) {
       await failPaymentForSession(
         session,
         paymentId,
