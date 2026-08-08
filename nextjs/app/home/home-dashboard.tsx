@@ -197,13 +197,9 @@ function useGreeting() {
 
 function ActionButton({
   action,
-  featured = false,
-  wide = false,
   onClick,
 }: {
   action: Action
-  featured?: boolean
-  wide?: boolean
   onClick: () => void
 }) {
   const Icon = action.icon
@@ -211,29 +207,12 @@ function ActionButton({
   return (
     <Button
       aria-label={action.title}
-      className={
-        featured
-          ? `relative h-28 overflow-hidden rounded-3xl bg-primary px-4 text-primary-foreground shadow-sm hover:bg-primary/90 ${wide ? "col-span-2" : ""}`
-          : "h-auto min-h-23 flex-col gap-2 rounded-3xl bg-primary px-2 py-3 text-primary-foreground shadow-sm hover:bg-primary/90"
-      }
+      className="h-auto min-h-23 flex-col gap-2 rounded-3xl bg-primary px-2 py-3 text-primary-foreground shadow-sm hover:bg-primary/90"
       onClick={onClick}
       type="button"
     >
-      <Icon
-        aria-hidden="true"
-        className={
-          featured
-            ? "absolute -right-3 -bottom-4 size-24 rotate-[-8deg] opacity-15"
-            : "size-6"
-        }
-      />
-      <span
-        className={
-          featured
-            ? "relative z-10 max-w-32 text-center text-sm leading-tight font-semibold"
-            : "max-w-full truncate text-xs font-medium sm:text-sm"
-        }
-      >
+      <Icon aria-hidden="true" className="size-6" />
+      <span className="max-w-full truncate text-xs font-medium sm:text-sm">
         {action.label}
       </span>
     </Button>
@@ -330,13 +309,13 @@ function WalletBalance() {
 
   return (
     <div className="mt-5">
-      <p className="text-xs font-medium tracking-[0.16em] text-primary-foreground/60 uppercase">
+      <p className="text-xs font-medium tracking-[0.16em] text-secondary-foreground/60 uppercase">
         Total balance
       </p>
       <p className="mt-2 text-4xl font-semibold tracking-tight sm:text-5xl">
         {displayBalanceLabel}
       </p>
-      <p className="mt-2 text-sm text-primary-foreground/70">{detail}</p>
+      <p className="mt-2 text-sm text-secondary-foreground/70">{detail}</p>
     </div>
   )
 }
@@ -490,14 +469,17 @@ export function HomeDashboard({
   return (
     <main className="mx-auto min-h-[calc(100svh-4rem)] w-full max-w-2xl p-4 pb-10 sm:p-6">
       <div className="space-y-6">
-        <Card className="relative overflow-hidden border-0 bg-primary text-primary-foreground shadow-lg">
+        <Card className="relative overflow-hidden border-0 bg-secondary text-secondary-foreground shadow-lg ring-1 ring-foreground/5">
           <CircleDollarSign className="pointer-events-none absolute -right-8 -bottom-12 size-48 rotate-12 opacity-[0.06]" />
           <CardContent className="relative p-6 sm:p-7">
             <div className="flex items-center justify-between gap-3">
-              <p className="text-sm text-primary-foreground/75">
-                {greeting}, {displayName}
+              <p className="text-sm text-secondary-foreground/75">
+                {greeting},{" "}
+                <span className="greeting-name-gradient font-semibold">
+                  {displayName}
+                </span>
               </p>
-              <span className="rounded-full bg-primary-foreground/10 px-3 py-1 text-[0.65rem] font-medium tracking-wider text-primary-foreground/75 uppercase ring-1 ring-primary-foreground/10">
+              <span className="rounded-full bg-secondary-foreground/10 px-3 py-1 text-[0.65rem] font-medium tracking-wider text-secondary-foreground/75 uppercase ring-1 ring-secondary-foreground/10">
                 Arc Testnet
               </span>
             </div>
@@ -516,14 +498,12 @@ export function HomeDashboard({
             ))}
             <MoreActions onOpenAction={setActiveAction} />
           </div>
-          <div className="grid grid-cols-2 gap-2 sm:gap-3">
-            {secondaryActions.map((action, index) => (
+          <div className="grid grid-cols-4 gap-2 sm:gap-3">
+            {secondaryActions.map((action) => (
               <ActionButton
                 action={action}
-                featured
                 key={action.id}
                 onClick={() => setActiveAction(action)}
-                wide={index === secondaryActions.length - 1}
               />
             ))}
           </div>
