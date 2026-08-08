@@ -211,7 +211,7 @@ function NotificationCenter() {
               type="button"
               variant="ghost"
             >
-              {busy === "mark-all" ? "Markingâ€¦" : "Mark all read"}
+              {busy === "mark-all" ? "Marking…" : "Mark all read"}
             </Button>
           </div>
           <SheetDescription>
@@ -226,7 +226,7 @@ function NotificationCenter() {
           ) : null}
           {notifications === undefined ? (
             <p className="text-sm text-muted-foreground">
-              Loading notificationsâ€¦
+              Loading notifications…
             </p>
           ) : notifications.length === 0 ? (
             <Empty className="min-h-56 border">
@@ -391,7 +391,7 @@ function NotificationRow({
               type="button"
             >
               <Check />
-              {busy === actionKey("accept") ? "Acceptingâ€¦" : "Accept"}
+              {busy === actionKey("accept") ? "Accepting…" : "Accept"}
             </Button>
             <Button
               disabled={busy !== undefined}
@@ -401,7 +401,7 @@ function NotificationRow({
               variant="outline"
             >
               <UserRoundX />
-              {busy === actionKey("decline") ? "Decliningâ€¦" : "Decline"}
+              {busy === actionKey("decline") ? "Declining…" : "Decline"}
             </Button>
           </>
         ) : null}
@@ -413,7 +413,7 @@ function NotificationRow({
             type="button"
             variant="ghost"
           >
-            {busy === actionKey("read") ? "Markingâ€¦" : "Mark read"}
+            {busy === actionKey("read") ? "Marking…" : "Mark read"}
           </Button>
         ) : null}
       </div>

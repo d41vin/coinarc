@@ -281,7 +281,7 @@ function SignIn() {
                   disabled={verifying}
                   onClick={verifyOtp}
                 >
-                  {verifying ? "Verifyingâ€¦" : "Enter verification code"}
+                  {verifying ? "Verifying…" : "Enter verification code"}
                 </Button>
                 <Button
                   className="w-full"
@@ -299,7 +299,7 @@ function SignIn() {
                 disabled={!appId || !ready || !email || sending}
                 onClick={sendOtp}
               >
-                {sending ? "Sending codeâ€¦" : "Continue with email"}
+                {sending ? "Sending code…" : "Continue with email"}
               </Button>
             )}
           </div>

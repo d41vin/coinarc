@@ -197,7 +197,7 @@ export function WalletLinkButton() {
     let phase: LinkPhase = "connection"
     setBusyWallet(connector.uid)
     setError(undefined)
-    setStatus(`Connecting to ${connector.name}â€¦`)
+    setStatus(`Connecting to ${connector.name}…`)
 
     try {
       const directProvider = selectedBrowserProvider(connector.id)
@@ -213,10 +213,10 @@ export function WalletLinkButton() {
       const provider = directProvider ?? (await connectorProvider(connector))
 
       phase = "network"
-      setStatus("Switching wallet to Arc Testnetâ€¦")
+      setStatus("Switching wallet to Arc Testnet…")
       await ensureArcTestnet(provider)
 
-      setStatus("Preparing a wallet-link messageâ€¦")
+      setStatus("Preparing a wallet-link message…")
       const nonceResponse = await fetch("/api/settings/wallet-link/nonce")
       const nonceData = (await nonceResponse.json()) as NonceResponse
       if (!nonceResponse.ok || !nonceData.nonce)
@@ -235,13 +235,13 @@ export function WalletLinkButton() {
         expirationTime: new Date(issuedAt.getTime() + 10 * 60_000),
       })
       phase = "signature"
-      setStatus("Confirm the signature in your walletâ€¦")
+      setStatus("Confirm the signature in your wallet…")
       const signature = directProvider
         ? await directSignature(provider, message, address)
         : await signMessageAsync({ message })
 
       phase = "verification"
-      setStatus("Linking walletâ€¦")
+      setStatus("Linking wallet…")
       const verifyResponse = await fetch("/api/settings/wallet-link/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -294,7 +294,7 @@ export function WalletLinkButton() {
               variant="outline"
             >
               {busyWallet === connector.uid
-                ? `Connecting to ${connector.name}â€¦`
+                ? `Connecting to ${connector.name}…`
                 : connector.name}
             </Button>
           ))}

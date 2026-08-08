@@ -30,7 +30,7 @@ function initials(displayName: string) {
 }
 
 function shortAddress(address: string) {
-  return `${address.slice(0, 6)}â€¦${address.slice(-4)}`
+  return `${address.slice(0, 6)}…${address.slice(-4)}`
 }
 
 export default async function PublicProfilePage({
