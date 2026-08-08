@@ -87,6 +87,12 @@ export function ReceiveDialog({
                   quietZone={12}
                   size={196}
                   value={address}
+                  qrStyle="dots"
+                  eyeRadius={[
+                    { outer: [100, 100, 100, 100], inner: [100, 100, 100, 100] },
+                    { outer: [100, 100, 100, 100], inner: [100, 100, 100, 100] },
+                    { outer: [100, 100, 100, 100], inner: [100, 100, 100, 100] }
+                  ]}
                 />
               </div>
 
