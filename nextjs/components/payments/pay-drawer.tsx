@@ -703,7 +703,7 @@ export function PayDrawer({
               ? "Pay request"
               : isSplitFulfillment
                 ? "Pay your contribution"
-                : "Pay"}
+                : "Send"}
           </DrawerTitle>
           <DrawerDescription>
             {isRequestFulfillment
@@ -878,7 +878,7 @@ export function PayDrawer({
                     ) : null}
                     {walletBalance === undefined ? (
                       <p className="text-xs text-muted-foreground">
-                        Checking available USDC balanceâ€¦
+                        Checking available USDC balance…
                       </p>
                     ) : walletBalance.balanceAvailable &&
                       walletBalanceBaseUnits !== null ? (
@@ -922,7 +922,8 @@ export function PayDrawer({
                     </div>
                   ) : (
                     <p className="rounded-2xl bg-muted/50 p-3 text-xs leading-5 text-muted-foreground">
-                      Private notes are available when you pay a CoinArc member.
+                      Private notes are available when you send to a CoinArc
+                      member.
                     </p>
                   )}
                 </div>
@@ -1065,14 +1066,14 @@ export function PayDrawer({
               >
                 {busy ? <LoaderCircle className="animate-spin" /> : <Send />}
                 {busy
-                  ? "Sending payment…"
+                  ? "Sending…"
                   : hasPendingPayment
-                    ? "Confirming payment…"
+                    ? "Confirming…"
                     : isRequestFulfillment
                       ? "Pay request"
                       : isSplitFulfillment
                         ? "Pay contribution"
-                        : "Send USDC"}
+                        : "Send"}
               </Button>
             ) : (
               <Button

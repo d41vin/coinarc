@@ -7,7 +7,6 @@ import {
   HandCoins,
   Link2,
   MoreHorizontal,
-  Pin,
   ReceiptText,
   Repeat2,
   Send,
@@ -15,7 +14,7 @@ import {
 } from "lucide-react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useEffect, useState, useSyncExternalStore } from "react"
-import { useConvexAuth, useMutation, useQuery } from "convex/react"
+import { useConvexAuth, useQuery } from "convex/react"
 import { makeFunctionReference } from "convex/server"
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -49,12 +48,10 @@ import {
 } from "@/components/ui/drawer"
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
@@ -82,7 +79,7 @@ type BalanceData = {
   walletAvailable: boolean
 }
 
-type CoreActionId = "pay" | "receive" | "split"
+type CoreActionId = "send" | "receive" | "split"
 type AdditionalActionId =
   | "payment-link"
   | "claim-link"
@@ -109,9 +106,9 @@ const listFriends = makeFunctionReference<
 
 const coreActions: Action[] = [
   {
-    id: "pay",
-    label: "Pay",
-    title: "Make a payment",
+    id: "send",
+    label: "Send",
+    title: "Send money",
     description: "Send USDC to someone in your CoinArc network.",
     icon: Send,
   },
@@ -162,23 +159,12 @@ const additionalActions: AdditionalAction[] = [
   },
   {
     id: "request-payment",
-    label: "Request payment",
+    label: "Request",
     title: "Request a payment",
     description: "Ask someone to pay you a specific amount.",
     icon: ReceiptText,
   },
 ]
-
-const homePinnedActions = makeFunctionReference<
-  "query",
-  Record<string, never>,
-  AdditionalActionId[]
->("users:homePinnedActions")
-const setHomePinnedActions = makeFunctionReference<
-  "mutation",
-  { pinnedActions: AdditionalActionId[] },
-  AdditionalActionId[]
->("users:setHomePinnedActions")
 
 const emptySubscribe = () => () => {}
 
@@ -211,9 +197,13 @@ function useGreeting() {
 
 function ActionButton({
   action,
+  featured = false,
+  wide = false,
   onClick,
 }: {
   action: Action
+  featured?: boolean
+  wide?: boolean
   onClick: () => void
 }) {
   const Icon = action.icon
@@ -221,15 +211,29 @@ function ActionButton({
   return (
     <Button
       aria-label={action.title}
-      className="h-auto min-h-23 flex-col gap-2 rounded-3xl bg-secondary px-2 py-3 text-secondary-foreground hover:bg-secondary/75"
+      className={
+        featured
+          ? `relative h-28 overflow-hidden rounded-3xl bg-primary px-4 text-primary-foreground shadow-sm hover:bg-primary/90 ${wide ? "col-span-2" : ""}`
+          : "h-auto min-h-23 flex-col gap-2 rounded-3xl bg-primary px-2 py-3 text-primary-foreground shadow-sm hover:bg-primary/90"
+      }
       onClick={onClick}
       type="button"
-      variant="secondary"
     >
-      <span className="flex size-10 items-center justify-center rounded-full bg-background shadow-sm ring-1 ring-foreground/5">
-        <Icon className="size-5" />
-      </span>
-      <span className="max-w-full truncate text-xs font-medium sm:text-sm">
+      <Icon
+        aria-hidden="true"
+        className={
+          featured
+            ? "absolute -right-3 -bottom-4 size-24 rotate-[-8deg] opacity-15"
+            : "size-6"
+        }
+      />
+      <span
+        className={
+          featured
+            ? "relative z-10 max-w-32 text-center text-sm leading-tight font-semibold"
+            : "max-w-full truncate text-xs font-medium sm:text-sm"
+        }
+      >
         {action.label}
       </span>
     </Button>
@@ -238,24 +242,16 @@ function ActionButton({
 
 function MoreActions({
   onOpenAction,
-  pinnedActionIds,
-  onTogglePinned,
-  pinning,
 }: {
   onOpenAction: (action: Action) => void
-  onTogglePinned: (actionId: AdditionalActionId) => void
-  pinnedActionIds: Set<AdditionalActionId>
-  pinning: boolean
 }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
         aria-label="Open more payment actions"
-        className="flex min-h-23 flex-col items-center justify-center gap-2 rounded-3xl bg-secondary px-2 py-3 text-secondary-foreground transition-colors outline-none hover:bg-secondary/75 focus-visible:ring-3 focus-visible:ring-ring/30"
+        className="flex min-h-23 flex-col items-center justify-center gap-2 rounded-3xl bg-primary px-2 py-3 text-primary-foreground shadow-sm transition-colors outline-none hover:bg-primary/90 focus-visible:ring-3 focus-visible:ring-ring/30"
       >
-        <span className="flex size-10 items-center justify-center rounded-full bg-background shadow-sm ring-1 ring-foreground/5">
-          <MoreHorizontal className="size-5" />
-        </span>
+        <MoreHorizontal className="size-6" />
         <span className="text-xs font-medium sm:text-sm">More</span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-72">
@@ -273,21 +269,6 @@ function MoreActions({
               </DropdownMenuItem>
             )
           })}
-        </DropdownMenuGroup>
-        <DropdownMenuSeparator />
-        <DropdownMenuGroup>
-          <DropdownMenuLabel>Pin shortcuts below</DropdownMenuLabel>
-          {additionalActions.map((action) => (
-            <DropdownMenuCheckboxItem
-              checked={pinnedActionIds.has(action.id)}
-              disabled={pinning}
-              key={action.id}
-              onCheckedChange={() => onTogglePinned(action.id)}
-            >
-              <Pin />
-              {action.label}
-            </DropdownMenuCheckboxItem>
-          ))}
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -334,7 +315,7 @@ function WalletBalance() {
     }
   }, [])
 
-  const balanceLabel = balance?.amount ? `${balance.amount} USDC` : "â€” USDC"
+  const balanceLabel = balance?.amount ? `${balance.amount} USDC` : "— USDC"
   const displayBalanceLabel = balance?.amount
     ? balanceLabel
     : String.fromCodePoint(0x2014) + " USDC"
@@ -348,9 +329,11 @@ function WalletBalance() {
         : "Link a wallet to see your balance"
 
   return (
-    <div className="mt-7">
-      <p className="text-sm text-primary-foreground/70">Total balance</p>
-      <p className="mt-1 text-3xl font-semibold tracking-tight sm:text-4xl">
+    <div className="mt-5">
+      <p className="text-xs font-medium tracking-[0.16em] text-primary-foreground/60 uppercase">
+        Total balance
+      </p>
+      <p className="mt-2 text-4xl font-semibold tracking-tight sm:text-5xl">
         {displayBalanceLabel}
       </p>
       <p className="mt-2 text-sm text-primary-foreground/70">{detail}</p>
@@ -361,7 +344,7 @@ function WalletBalance() {
 function FriendsPanel({ data }: { data: FriendsData | undefined }) {
   if (data === undefined) {
     return (
-      <p className="py-8 text-sm text-muted-foreground">Loading friendsâ€¦</p>
+      <p className="py-8 text-sm text-muted-foreground">Loading friends…</p>
     )
   }
 
@@ -374,7 +357,7 @@ function FriendsPanel({ data }: { data: FriendsData | undefined }) {
           </EmptyMedia>
           <EmptyTitle>Your circle starts here</EmptyTitle>
           <EmptyDescription>
-            Add friends from the search button in the header, then pay or split
+            Add friends from the search button in the header, then send or split
             with them from CoinArc.
           </EmptyDescription>
         </EmptyHeader>
@@ -433,16 +416,8 @@ export function HomeDashboard({
   const searchParams = useSearchParams()
   const { isAuthenticated } = useConvexAuth()
   const friends = useQuery(listFriends, isAuthenticated ? {} : "skip")
-  const savedPinnedActions = useQuery(
-    homePinnedActions,
-    isAuthenticated ? {} : "skip"
-  )
-  const savePinnedActions = useMutation(setHomePinnedActions)
   const [activeAction, setActiveAction] = useState<Action | null>(null)
   const greeting = useGreeting()
-  const [isSavingPins, setIsSavingPins] = useState(false)
-  const [pinError, setPinError] = useState<string>()
-  const pinnedActionIds = new Set(savedPinnedActions ?? [])
   const selectedPaymentId = searchParams.get("payment")
   const selectedRequestId = searchParams.get("request")
   const selectedSplitId = searchParams.get("split")
@@ -454,6 +429,11 @@ export function HomeDashboard({
     (action) => action.id === "request-payment"
   )!
   const splitAction = coreActions.find((action) => action.id === "split")!
+  const primaryActions = [coreActions[0], coreActions[1], requestAction]
+  const secondaryActions = [
+    splitAction,
+    ...additionalActions.filter((action) => action.id !== "request-payment"),
+  ]
 
   function openPayment(paymentId: string) {
     const next = new URLSearchParams(searchParams.toString())
@@ -507,76 +487,46 @@ export function HomeDashboard({
     if (splitId) openSplit(splitId)
   }
 
-  async function togglePinned(actionId: AdditionalActionId) {
-    if (isSavingPins || savedPinnedActions === undefined) return
-    const next = new Set(pinnedActionIds)
-    if (next.has(actionId)) next.delete(actionId)
-    else next.add(actionId)
-    setIsSavingPins(true)
-    setPinError(undefined)
-    try {
-      await savePinnedActions({ pinnedActions: [...next] })
-    } catch (reason) {
-      setPinError(
-        reason instanceof Error
-          ? reason.message
-          : "Could not save your pinned shortcuts. Please try again."
-      )
-    } finally {
-      setIsSavingPins(false)
-    }
-  }
-
-  const pinnedActions = additionalActions.filter((action) =>
-    pinnedActionIds.has(action.id)
-  )
-
   return (
     <main className="mx-auto min-h-[calc(100svh-4rem)] w-full max-w-2xl p-4 pb-10 sm:p-6">
       <div className="space-y-6">
-        <Card className="bg-primary text-primary-foreground shadow-lg">
-          <CardContent className="pt-6">
-            <p className="text-sm text-primary-foreground/70">
-              {greeting}, {displayName}
-            </p>
+        <Card className="relative overflow-hidden border-0 bg-primary text-primary-foreground shadow-lg">
+          <CircleDollarSign className="pointer-events-none absolute -right-8 -bottom-12 size-48 rotate-12 opacity-[0.06]" />
+          <CardContent className="relative p-6 sm:p-7">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm text-primary-foreground/75">
+                {greeting}, {displayName}
+              </p>
+              <span className="rounded-full bg-primary-foreground/10 px-3 py-1 text-[0.65rem] font-medium tracking-wider text-primary-foreground/75 uppercase ring-1 ring-primary-foreground/10">
+                Arc Testnet
+              </span>
+            </div>
             <WalletBalance />
           </CardContent>
         </Card>
 
         <section aria-label="Payment actions" className="space-y-3">
           <div className="grid grid-cols-4 gap-2 sm:gap-3">
-            {coreActions.map((action) => (
+            {primaryActions.map((action) => (
               <ActionButton
                 action={action}
                 key={action.id}
                 onClick={() => setActiveAction(action)}
               />
             ))}
-            <MoreActions
-              onOpenAction={setActiveAction}
-              onTogglePinned={togglePinned}
-              pinnedActionIds={pinnedActionIds}
-              pinning={isSavingPins || savedPinnedActions === undefined}
-            />
+            <MoreActions onOpenAction={setActiveAction} />
           </div>
-
-          {pinError ? (
-            <p className="text-sm text-destructive" role="alert">
-              {pinError}
-            </p>
-          ) : null}
-
-          {pinnedActions.length > 0 ? (
-            <div className="grid grid-cols-4 gap-2 sm:gap-3">
-              {pinnedActions.map((action) => (
-                <ActionButton
-                  action={action}
-                  key={action.id}
-                  onClick={() => setActiveAction(action)}
-                />
-              ))}
-            </div>
-          ) : null}
+          <div className="grid grid-cols-2 gap-2 sm:gap-3">
+            {secondaryActions.map((action, index) => (
+              <ActionButton
+                action={action}
+                featured
+                key={action.id}
+                onClick={() => setActiveAction(action)}
+                wide={index === secondaryActions.length - 1}
+              />
+            ))}
+          </div>
         </section>
 
         <Card>
@@ -613,7 +563,7 @@ export function HomeDashboard({
         }}
         open={
           activeAction !== null &&
-          activeAction.id !== "pay" &&
+          activeAction.id !== "send" &&
           activeAction.id !== "receive" &&
           activeAction.id !== "request-payment" &&
           activeAction.id !== "split"
@@ -653,7 +603,7 @@ export function HomeDashboard({
         key={
           requestFulfillment?.requestId ??
           splitFulfillment?.splitParticipantId ??
-          "pay"
+          "send"
         }
         onOpenChange={(open) => {
           if (!open) {
@@ -666,7 +616,7 @@ export function HomeDashboard({
         onReturnToRequest={returnToRequestDetails}
         onReturnToSplit={returnToSplitDetails}
         open={
-          activeAction?.id === "pay" ||
+          activeAction?.id === "send" ||
           requestFulfillment !== null ||
           splitFulfillment !== null
         }
